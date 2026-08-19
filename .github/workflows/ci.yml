@@ -34,6 +34,12 @@ jobs:
       - name: Enable corepack (used by dsh scripts)
         run: corepack enable
 
+      - name: Rewrite git SSH URLs to HTTPS
+        # @electron/rebuild -> @electron/node-gyp is pinned to a git commit
+        # (git@github.com:electron/node-gyp.git) with no registry equivalent;
+        # GitHub runners have no SSH key, so fetch it over HTTPS instead.
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 

@@ -29,9 +29,11 @@
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
     "@electron-forge/plugin-fuses": "^7.11.2",
     "@electron/fuses": "^1.8.0",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.2.0",
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
+    "drizzle-kit": "^0.31.10",
     "electron": "^43.4.1",
     "nodemon": "^3.1.14",
     "typescript": "^7.0.2",
@@ -40,6 +42,8 @@
   "dependencies": {
     "@robbot/core": "workspace:*",
     "@robbot/dsh-adapter": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.2",
     "electron-squirrel-startup": "^1.0.1"
   }
 }

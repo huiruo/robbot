@@ -14,7 +14,7 @@ async function bootstrap(): Promise<void> {
   registerIpcHandlers(services);
 
   app.on('before-quit', () => {
-    void services.harness.dispose();
+    void services.dispose();
   });
 
   await createMainWindow();

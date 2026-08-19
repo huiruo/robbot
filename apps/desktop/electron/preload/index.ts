@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('robbot', {
   workspace: {
     list: (accountId: string) => ipcRenderer.invoke('workspace:list', accountId),
     save: (input: unknown) => ipcRenderer.invoke('workspace:save', input),
+    selectDirectory: (accountId: string) => ipcRenderer.invoke('workspace:select-directory', accountId),
     rename: (accountId: string, workspaceId: string, name: string) =>
       ipcRenderer.invoke('workspace:rename', accountId, workspaceId, name),
     delete: (accountId: string, workspaceId: string) => ipcRenderer.invoke('workspace:delete', accountId, workspaceId),
@@ -27,9 +28,16 @@ contextBridge.exposeInMainWorld('robbot', {
     archive: (accountId: string, sessionId: string) => ipcRenderer.invoke('session:archive', accountId, sessionId),
     delete: (accountId: string, sessionId: string) => ipcRenderer.invoke('session:delete', accountId, sessionId),
   },
+  message: {
+    list: (sessionId: string) => ipcRenderer.invoke('message:list', sessionId),
+  },
   harness: {
     getStatus: () => ipcRenderer.invoke('harness:get-status'),
-    runPrompt: (prompt: string) => ipcRenderer.invoke('harness:run-prompt', prompt),
+    listActiveRuns: () => ipcRenderer.invoke('harness:list-active-runs'),
+    runPrompt: (input: unknown) => ipcRenderer.invoke('harness:run-prompt', input),
+    cancel: (sessionId: string) => ipcRenderer.invoke('harness:cancel', sessionId),
+    approve: (sessionId: string, approvalId: string, approved: boolean) =>
+      ipcRenderer.invoke('harness:approve', sessionId, approvalId, approved),
     onLog: (listener: (entry: unknown) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, entry: unknown) => listener(entry);
       ipcRenderer.on('harness:log', handler);

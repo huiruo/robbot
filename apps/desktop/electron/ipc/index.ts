@@ -1,7 +1,9 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from 'electron';
+import path from 'node:path';
 
 import type { RuntimeServices } from '../runtime';
 import type { AccountStatus } from '../storage/repositories';
+import type { HarnessRunInput } from '../main/harness/harness-service';
 
 export interface UpsertAccountInput {
   id: string;
@@ -29,10 +31,36 @@ export interface CreateSessionInput {
 }
 
 export function registerIpcHandlers(services: RuntimeServices): void {
+  services.harness.setLogSink((entry) => {
+    broadcast('harness:log', entry);
+  });
+  services.harness.setEventSink((event) => {
+    broadcast('harness:event', event);
+  });
+
   ipcMain.handle('account:upsert-current', (_event, input: UpsertAccountInput) => services.accounts.upsert(input));
 
   ipcMain.handle('workspace:list', (_event, accountId: string) => services.workspaces.list(accountId));
   ipcMain.handle('workspace:save', (_event, input: SaveWorkspaceInput) => services.workspaces.save(input));
+  ipcMain.handle('workspace:select-directory', async (event, accountId: string) => {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    const options: OpenDialogOptions = {
+      properties: ['openDirectory'],
+    };
+    const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+
+    const rootPath = result.filePaths[0];
+    return services.workspaces.save({
+      accountId,
+      rootPath,
+      name: path.basename(rootPath) || rootPath,
+      permissionPolicy: {},
+    });
+  });
   ipcMain.handle('workspace:rename', (_event, accountId: string, workspaceId: string, name: string) =>
     services.workspaces.rename(accountId, workspaceId, name),
   );
@@ -54,15 +82,19 @@ export function registerIpcHandlers(services: RuntimeServices): void {
     services.sessions.delete(accountId, sessionId),
   );
 
-  ipcMain.handle('harness:get-status', () => services.harness.getStatus());
-  ipcMain.handle('harness:run-prompt', (event, prompt: string) => {
-    services.harness.setLogSink((entry) => {
-      event.sender.send('harness:log', entry);
-    });
-    services.harness.setEventSink((harnessEvent) => {
-      event.sender.send('harness:event', harnessEvent);
-    });
+  ipcMain.handle('message:list', (_event, sessionId: string) => services.messages.list(sessionId));
 
-    return services.harness.runPrompt(prompt);
-  });
+  ipcMain.handle('harness:get-status', () => services.harness.getStatus());
+  ipcMain.handle('harness:list-active-runs', () => services.harness.getActiveRuns());
+  ipcMain.handle('harness:run-prompt', (_event, input: HarnessRunInput) => services.harness.runPrompt(input));
+  ipcMain.handle('harness:cancel', (_event, sessionId: string) => services.harness.cancel(sessionId));
+  ipcMain.handle('harness:approve', (_event, sessionId: string, approvalId: string, approved: boolean) =>
+    services.harness.approve(sessionId, { approvalId, approved }),
+  );
+}
+
+function broadcast(channel: string, payload: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(channel, payload);
+  }
 }

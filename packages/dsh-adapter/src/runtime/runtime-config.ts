@@ -1,16 +1,20 @@
 export interface DshRuntimeConfig {
   submodule: string;
-  protocol: 'acp';
+  protocol: 'sdk' | 'acp';
   profile: string;
   buildRequired: boolean;
-  /** Path to the ACP Cordis config, relative to the DSH runtime root. */
+  provider?: string;
+  model?: string;
+  /** Path to the Cordis config, relative to the DSH runtime root. */
   configPath: string;
 }
 
 export const defaultDshRuntimeConfig: DshRuntimeConfig = {
   submodule: 'vendor/deepseek-harness',
-  protocol: 'acp',
-  profile: 'acp',
+  protocol: 'sdk',
+  profile: 'sdk',
   buildRequired: true,
-  configPath: 'examples/acp-agent/cordis.yml',
+  provider: 'deepseek-official',
+  model: 'deepseek-v4-flash',
+  configPath: '../../config/dsh-sdk-flash.cordis.yml',
 };

@@ -29,6 +29,7 @@ interface PendingPermission {
 }
 
 export class AcpTransport implements HarnessTransport {
+  readonly mode = 'acp' as const;
   private channel?: StdioChannel;
   private initialized?: Promise<void>;
   private nextId = 1;
@@ -40,6 +41,16 @@ export class AcpTransport implements HarnessTransport {
   private readonly permissions = new Map<string, PendingPermission>();
 
   constructor(private readonly runtimeManager: DshRuntimeManager) {}
+
+  capabilities() {
+    return {
+      streaming: 'committed-message' as const,
+      toolEvents: false,
+      cancelCurrentRun: true,
+      approval: true,
+      sessionResume: false,
+    };
+  }
 
   async createSession(input: CreateSessionInput): Promise<HarnessSession> {
     await this.ensureInitialized();
@@ -146,7 +157,7 @@ export class AcpTransport implements HarnessTransport {
 
   private async connectAndInitialize(): Promise<void> {
     console.info('[robbot:acp] starting runtime');
-    const processHandle = await this.runtimeManager.start('acp');
+    const processHandle = await this.runtimeManager.start('acp', 'acp');
     this.channel = processHandle.getChannel();
     this.attachReader(this.channel);
     console.info('[robbot:acp] sending initialize');
@@ -361,9 +372,8 @@ class AsyncEventQueue<T> {
   }
 
   async shift(): Promise<T | undefined> {
-    const value = this.values.shift();
-    if (value !== undefined || this.values.length > 0) {
-      return value;
+    if (this.values.length > 0) {
+      return this.values.shift();
     }
 
     return new Promise((resolve) => {

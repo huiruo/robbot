@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 
 import type { DesktopDatabase } from './database';
-import { accounts, sessions, workspaces } from './schema';
+import { accounts, messages, sessions, workspaces } from './schema';
 
 export type AccountStatus = 'active' | 'disabled';
 export type SessionStatus = 'active' | 'archived';
+export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
+export type MessageStatus = 'streaming' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
 export interface AccountRecord {
   id: string;
@@ -43,9 +45,21 @@ export interface SessionRecord {
   lastMessageId: string | null;
   lastMessageAt: number | null;
   summary: string | null;
+  harnessSessionId: string | null;
+  harnessInstanceId: string | null;
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
+}
+
+export interface MessageRecord {
+  id: string;
+  sessionId: string;
+  role: MessageRole;
+  content: string;
+  status: MessageStatus;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export class AccountRepository {
@@ -159,7 +173,7 @@ export class WorkspaceRepository {
       .where(and(eq(workspaces.accountId, accountId), eq(workspaces.id, workspaceId), isNull(workspaces.deletedAt)))
       .run();
 
-    return this.require(accountId, workspaceId);
+    return this.get(accountId, workspaceId);
   }
 
   delete(accountId: string, workspaceId: string): void {
@@ -170,7 +184,7 @@ export class WorkspaceRepository {
       .run();
   }
 
-  private require(accountId: string, workspaceId: string): WorkspaceRecord {
+  get(accountId: string, workspaceId: string): WorkspaceRecord {
     return requireRecord(
       this.db
         .select()
@@ -216,13 +230,15 @@ export class SessionRepository {
         lastMessageId: null,
         lastMessageAt: null,
         summary: null,
+        harnessSessionId: null,
+        harnessInstanceId: null,
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
       })
       .run();
 
-    return this.require(input.accountId, id);
+    return this.get(input.accountId, id);
   }
 
   rename(accountId: string, sessionId: string, title: string): SessionRecord {
@@ -232,7 +248,7 @@ export class SessionRepository {
       .where(and(eq(sessions.accountId, accountId), eq(sessions.id, sessionId), isNull(sessions.deletedAt)))
       .run();
 
-    return this.require(accountId, sessionId);
+    return this.get(accountId, sessionId);
   }
 
   archive(accountId: string, sessionId: string): SessionRecord {
@@ -242,7 +258,7 @@ export class SessionRepository {
       .where(and(eq(sessions.accountId, accountId), eq(sessions.id, sessionId), isNull(sessions.deletedAt)))
       .run();
 
-    return this.require(accountId, sessionId);
+    return this.get(accountId, sessionId);
   }
 
   delete(accountId: string, sessionId: string): void {
@@ -253,7 +269,53 @@ export class SessionRepository {
       .run();
   }
 
-  private require(accountId: string, sessionId: string): SessionRecord {
+  attachHarnessSession(accountId: string, sessionId: string, input: {
+    harnessSessionId: string;
+    harnessInstanceId: string;
+  }): SessionRecord {
+    this.db
+      .update(sessions)
+      .set({
+        harnessSessionId: input.harnessSessionId,
+        harnessInstanceId: input.harnessInstanceId,
+        updatedAt: Date.now(),
+      })
+      .where(and(eq(sessions.accountId, accountId), eq(sessions.id, sessionId), isNull(sessions.deletedAt)))
+      .run();
+
+    return this.get(accountId, sessionId);
+  }
+
+  touchAfterMessage(accountId: string, sessionId: string, input: {
+    lastMessageId: string;
+    lastMessageAt: number;
+    title?: string | null;
+  }): SessionRecord {
+    const set: {
+      lastMessageId: string;
+      lastMessageAt: number;
+      updatedAt: number;
+      title?: string | null;
+    } = {
+      lastMessageId: input.lastMessageId,
+      lastMessageAt: input.lastMessageAt,
+      updatedAt: Date.now(),
+    };
+
+    if (input.title !== undefined) {
+      set.title = input.title;
+    }
+
+    this.db
+      .update(sessions)
+      .set(set)
+      .where(and(eq(sessions.accountId, accountId), eq(sessions.id, sessionId), isNull(sessions.deletedAt)))
+      .run();
+
+    return this.get(accountId, sessionId);
+  }
+
+  get(accountId: string, sessionId: string): SessionRecord {
     return requireRecord(
       this.db
         .select()
@@ -262,6 +324,86 @@ export class SessionRepository {
         .get(),
       `Unknown session: ${sessionId}`,
     );
+  }
+}
+
+export class MessageRepository {
+  constructor(private readonly db: DesktopDatabase) {}
+
+  list(sessionId: string): MessageRecord[] {
+    return this.db.select().from(messages).where(eq(messages.sessionId, sessionId)).orderBy(asc(messages.createdAt)).all();
+  }
+
+  create(input: {
+    id?: string;
+    sessionId: string;
+    role: MessageRole;
+    content: string;
+    status?: MessageStatus;
+    createdAt?: number;
+  }): MessageRecord {
+    const now = input.createdAt ?? Date.now();
+    const id = input.id ?? randomUUID();
+
+    this.db
+      .insert(messages)
+      .values({
+        id,
+        sessionId: input.sessionId,
+        role: input.role,
+        content: input.content,
+        status: input.status ?? 'completed',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    return this.get(id);
+  }
+
+  updateContent(messageId: string, content: string): MessageRecord {
+    this.db.update(messages).set({ content, updatedAt: Date.now() }).where(eq(messages.id, messageId)).run();
+    return this.get(messageId);
+  }
+
+  updateStatus(messageId: string, status: MessageStatus, content?: string): MessageRecord {
+    this.db
+      .update(messages)
+      .set({
+        ...(content === undefined ? {} : { content }),
+        status,
+        updatedAt: Date.now(),
+      })
+      .where(eq(messages.id, messageId))
+      .run();
+
+    return this.get(messageId);
+  }
+
+  updateStreamingStatus(messageId: string, status: Exclude<MessageStatus, 'streaming'>, content?: string): MessageRecord {
+    this.db
+      .update(messages)
+      .set({
+        ...(content === undefined ? {} : { content }),
+        status,
+        updatedAt: Date.now(),
+      })
+      .where(and(eq(messages.id, messageId), eq(messages.status, 'streaming')))
+      .run();
+
+    return this.get(messageId);
+  }
+
+  markStreamingInterrupted(): void {
+    this.db
+      .update(messages)
+      .set({ status: 'interrupted', updatedAt: Date.now() })
+      .where(eq(messages.status, 'streaming'))
+      .run();
+  }
+
+  get(messageId: string): MessageRecord {
+    return requireRecord(this.db.select().from(messages).where(eq(messages.id, messageId)).get(), `Unknown message: ${messageId}`);
   }
 }
 

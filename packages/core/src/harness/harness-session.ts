@@ -13,5 +13,7 @@ export interface HarnessSession {
 
 export interface RunInput {
   prompt: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    runMode?: 'sdk' | 'acp';
+  };
 }

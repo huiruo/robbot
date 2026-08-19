@@ -1,6 +1,7 @@
 import { HarnessError } from '@robbot/core';
 
 import { DshProcess } from '../transport/process/dsh-process.js';
+import type { DshProcessProtocol } from '../transport/process/dsh-process.js';
 import { DshRuntimeResolver, type ResolvedDshRuntime } from './dsh-runtime-resolver.js';
 
 export type DshRuntimeStatus = 'missing' | 'not_installed' | 'ready' | 'running';
@@ -24,36 +25,47 @@ export class DshRuntimeManager {
     }
   }
 
-  async start(sessionId: string): Promise<DshProcess> {
+  async start(
+    sessionId: string,
+    protocol?: DshProcessProtocol,
+    envOverrides: Record<string, string | undefined> = {},
+  ): Promise<DshProcess> {
     await this.verifyRuntime();
-    const existing = this.processes.get(sessionId);
+    const runtime = this.resolveRuntime();
+    const selectedProtocol = protocol ?? runtime.config.protocol;
+    const processKey = `${selectedProtocol}:${sessionId}`;
+    const existing = this.processes.get(processKey);
     if (existing) {
       return existing;
     }
 
-    const runtime = this.resolveRuntime();
     const processHandle = new DshProcess(
       runtime.root,
-      process.env.ROBBOT_DSH_CONFIG ?? runtime.config.configPath,
+      selectedProtocol,
+      process.env.ROBBOT_DSH_CONFIG ?? configPathForProtocol(selectedProtocol, runtime.config.protocol, runtime.config.configPath),
+      envOverrides,
     );
     await processHandle.start();
-    this.processes.set(sessionId, processHandle);
+    this.processes.set(processKey, processHandle);
     return processHandle;
   }
 
-  async stop(sessionId: string): Promise<void> {
-    const processHandle = this.processes.get(sessionId);
+  async stop(sessionId: string, protocol?: DshProcessProtocol): Promise<void> {
+    const runtime = this.resolveRuntime();
+    const selectedProtocol = protocol ?? runtime.config.protocol;
+    const processKey = `${selectedProtocol}:${sessionId}`;
+    const processHandle = this.processes.get(processKey);
     if (!processHandle) {
       return;
     }
 
     await processHandle.stop();
-    this.processes.delete(sessionId);
+    this.processes.delete(processKey);
   }
 
-  async restart(sessionId: string): Promise<DshProcess> {
-    await this.stop(sessionId);
-    return this.start(sessionId);
+  async restart(sessionId: string, protocol?: DshProcessProtocol): Promise<DshProcess> {
+    await this.stop(sessionId, protocol);
+    return this.start(sessionId, protocol);
   }
 
   status(sessionId?: string): DshRuntimeStatus {
@@ -63,13 +75,25 @@ export class DshRuntimeManager {
     if (!this.resolver.isRuntimeInstalled()) {
       return 'not_installed';
     }
-    if (sessionId && this.processes.has(sessionId)) {
+    if (sessionId && (this.processes.has(`sdk:${sessionId}`) || this.processes.has(`acp:${sessionId}`))) {
       return 'running';
     }
     return 'ready';
   }
 
   async stopAll(): Promise<void> {
-    await Promise.all([...this.processes.keys()].map((sessionId) => this.stop(sessionId)));
+    const entries = [...this.processes.entries()];
+    await Promise.all(entries.map(async ([processKey, processHandle]) => {
+      await processHandle.stop();
+      this.processes.delete(processKey);
+    }));
   }
+}
+
+function configPathForProtocol(protocol: DshProcessProtocol, configuredProtocol: DshProcessProtocol, configuredPath: string): string {
+  if (protocol === configuredProtocol) {
+    return configuredPath;
+  }
+
+  return protocol === 'sdk' ? '../../config/dsh-sdk-flash.cordis.yml' : '../../config/dsh-acp-flash.cordis.yml';
 }

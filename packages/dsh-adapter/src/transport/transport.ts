@@ -1,6 +1,10 @@
-import type { ApprovalInput, CreateSessionInput, HarnessEvent, HarnessSession, RunInput } from '@robbot/core';
+import type { ApprovalInput, CreateSessionInput, HarnessCapabilities, HarnessEvent, HarnessRunMode, HarnessSession, RunInput } from '@robbot/core';
+
+export type DshRunMode = HarnessRunMode;
 
 export interface HarnessTransport {
+  readonly mode: DshRunMode;
+  capabilities(): HarnessCapabilities;
   createSession(input: CreateSessionInput): Promise<HarnessSession>;
   run(sessionId: string, input: RunInput): AsyncIterable<HarnessEvent>;
   cancel(sessionId: string): Promise<void>;

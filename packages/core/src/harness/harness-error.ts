@@ -4,6 +4,7 @@ export type HarnessErrorCode =
   | 'transport_error'
   | 'protocol_error'
   | 'run_interrupted'
+  | 'unsupported_capability'
   | 'unknown';
 
 export class HarnessError extends Error {

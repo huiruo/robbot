@@ -6,12 +6,16 @@ import { HarnessError } from '@robbot/core';
 
 import { StdioChannel } from './stdio-channel.js';
 
+export type DshProcessProtocol = 'sdk' | 'acp';
+
 export class DshProcess {
   private child?: ChildProcessWithoutNullStreams;
   private channel?: StdioChannel;
   constructor(
     private readonly cwd: string,
+    private readonly protocol: DshProcessProtocol,
     private readonly configPath = 'examples/acp-agent/cordis.yml',
+    private readonly envOverrides: Record<string, string | undefined> = {},
   ) {}
 
   async start(): Promise<StdioChannel> {
@@ -20,16 +24,16 @@ export class DshProcess {
     }
 
     const nodeExecutable = resolveNodeExecutable();
-    const args = [
-      '--import',
-      'tsx',
-      'packages/examples/acp-demo/src/bin.ts',
-      '--config',
-      this.configPath,
-    ];
+    const bin = this.protocol === 'sdk'
+      ? 'packages/examples/jsonrpc-demo/src/bin.ts'
+      : 'packages/examples/acp-demo/src/bin.ts';
+    const args = this.protocol === 'sdk'
+      ? ['--import', 'tsx', bin, this.configPath]
+      : ['--import', 'tsx', bin, '--config', this.configPath];
 
-    console.info('[robbot:dsh-process] starting DSH ACP process', {
+    console.info('[robbot:dsh-process] starting DSH process', {
       cwd: this.cwd,
+      protocol: this.protocol,
       nodeExecutable,
       args,
     });
@@ -40,18 +44,20 @@ export class DshProcess {
       env: {
         ...process.env,
         DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? readDeepSeekApiKeyFromRobbotEnv(this.cwd) ?? 'sk-dummy-for-boot',
-        DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? 'danger-full-access',
+        DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? 'workspace-write',
+        DSH_CORDIS_CONFIG: this.configPath,
         TSX_TSCONFIG_PATH: path.join(this.cwd, 'tsconfig.json'),
+        ...this.envOverrides,
       },
     });
 
     this.child.once('error', (error: Error) => {
-      console.error('[robbot:dsh-process] failed to start DSH ACP process', error);
-      throw new HarnessError('Failed to start DSH ACP process.', 'transport_error', error);
+      console.error('[robbot:dsh-process] failed to start DSH process', error);
+      throw new HarnessError('Failed to start DSH process.', 'transport_error', error);
     });
 
     this.child.once('exit', (code, signal) => {
-      console.info('[robbot:dsh-process] DSH ACP process exited', { code, signal });
+      console.info('[robbot:dsh-process] DSH process exited', { protocol: this.protocol, code, signal });
     });
 
     this.child.stderr.setEncoding('utf8');
@@ -76,7 +82,7 @@ export class DshProcess {
       return;
     }
 
-    console.info('[robbot:dsh-process] stopping DSH ACP process');
+    console.info('[robbot:dsh-process] stopping DSH process', { protocol: this.protocol });
     this.child.kill('SIGTERM');
     this.child = undefined;
     this.channel = undefined;

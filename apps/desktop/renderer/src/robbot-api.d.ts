@@ -4,20 +4,64 @@ export interface HarnessRuntimeStatus {
 }
 
 export interface HarnessRunResult {
-  sessionId: string;
-  text: string;
-  events: Array<{ type: string; [key: string]: unknown }>;
+  runId: string;
+  userMessageId: string;
+  assistantMessageId: string;
+  harnessSessionId: string;
+  runMode: HarnessRunMode;
 }
 
-export type HarnessEvent =
-  | { type: 'run.started'; runId: string; sessionId: string }
-  | { type: 'assistant.delta'; text: string }
-  | { type: 'tool.started'; toolCallId: string; name: string; input?: unknown }
-  | { type: 'tool.output'; toolCallId: string; output: string }
-  | { type: 'approval.required'; approval: unknown }
-  | { type: 'tool.completed'; toolCallId: string; result?: unknown }
-  | { type: 'run.completed'; runId: string }
-  | { type: 'run.failed'; runId?: string; error: { message: string; code?: string } };
+export type HarnessRunMode = 'sdk' | 'acp';
+export type HarnessStreamingCapability = 'none' | 'committed-message' | 'runtime-events';
+
+export interface HarnessCapabilities {
+  streaming: HarnessStreamingCapability;
+  toolEvents: boolean;
+  cancelCurrentRun: boolean;
+  approval: boolean;
+  sessionResume: boolean;
+}
+
+export type ActiveRunStatus = 'running' | 'waiting_approval' | 'cancelling';
+
+export interface ActiveRunRef {
+  runId: string;
+  runMode: HarnessRunMode;
+  harnessSessionId: string;
+  assistantMessageId: string;
+  status: ActiveRunStatus;
+  capabilities: HarnessCapabilities;
+}
+
+export interface HarnessRunInput {
+  accountId: string;
+  workspaceId: string;
+  sessionId: string;
+  prompt: string;
+  runMode?: HarnessRunMode;
+}
+
+export type HarnessEventType =
+  | 'run.started'
+  | 'assistant.delta'
+  | 'assistant.message'
+  | 'tool.started'
+  | 'tool.output'
+  | 'tool.completed'
+  | 'approval.required'
+  | 'run.completed'
+  | 'run.failed'
+  | 'run.cancelled'
+  | 'run.interrupted';
+
+export interface HarnessEvent {
+  runId: string;
+  sessionId: string;
+  messageId?: string;
+  harnessSessionId?: string;
+  type: HarnessEventType;
+  payload?: unknown;
+}
 
 export interface HarnessLogEntry {
   at: string;
@@ -63,9 +107,24 @@ export interface SessionRecord {
   lastMessageId: string | null;
   lastMessageAt: number | null;
   summary: string | null;
+  harnessSessionId: string | null;
+  harnessInstanceId: string | null;
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
+}
+
+export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
+export type MessageStatus = 'streaming' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+
+export interface MessageRecord {
+  id: string;
+  sessionId: string;
+  role: MessageRole;
+  content: string;
+  status: MessageStatus;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface UpsertAccountInput {
@@ -108,6 +167,7 @@ export interface RobbotApi {
   workspace: {
     list: (accountId: string) => Promise<WorkspaceRecord[]>;
     save: (input: SaveWorkspaceInput) => Promise<WorkspaceRecord>;
+    selectDirectory: (accountId: string) => Promise<WorkspaceRecord | null>;
     rename: (accountId: string, workspaceId: string, name: string) => Promise<WorkspaceRecord>;
     delete: (accountId: string, workspaceId: string) => Promise<void>;
   };
@@ -118,9 +178,15 @@ export interface RobbotApi {
     archive: (accountId: string, sessionId: string) => Promise<SessionRecord>;
     delete: (accountId: string, sessionId: string) => Promise<void>;
   };
+  message: {
+    list: (sessionId: string) => Promise<MessageRecord[]>;
+  };
   harness: {
     getStatus: () => Promise<HarnessRuntimeStatus>;
-    runPrompt: (prompt: string) => Promise<HarnessRunResult>;
+    listActiveRuns: () => Promise<Record<string, ActiveRunRef>>;
+    runPrompt: (input: HarnessRunInput) => Promise<HarnessRunResult>;
+    cancel: (sessionId: string) => Promise<void>;
+    approve: (sessionId: string, approvalId: string, approved: boolean) => Promise<void>;
     onLog: (listener: (entry: HarnessLogEntry) => void) => () => void;
     onEvent: (listener: (event: HarnessEvent) => void) => () => void;
   };

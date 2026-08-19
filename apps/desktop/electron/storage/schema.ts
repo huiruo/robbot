@@ -67,6 +67,8 @@ export const sessions = sqliteTable(
     lastMessageId: text('last_message_id'),
     lastMessageAt: integer('last_message_at'),
     summary: text('summary'),
+    harnessSessionId: text('harness_session_id'),
+    harnessInstanceId: text('harness_instance_id'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
     deletedAt: integer('deleted_at'),
@@ -79,8 +81,31 @@ export const sessions = sqliteTable(
   }),
 );
 
+export const messages = sqliteTable(
+  'messages',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => sessions.id, {
+        onDelete: 'cascade',
+      }),
+    role: text('role', { enum: ['user', 'assistant', 'system', 'tool'] }).notNull(),
+    content: text('content').notNull(),
+    status: text('status', { enum: ['streaming', 'completed', 'failed', 'cancelled', 'interrupted'] })
+      .notNull()
+      .default('completed'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => ({
+    sessionCreatedIdx: index('messages_session_created_idx').on(table.sessionId, table.createdAt),
+  }),
+);
+
 export const schema = {
   accounts,
   workspaces,
   sessions,
+  messages,
 };

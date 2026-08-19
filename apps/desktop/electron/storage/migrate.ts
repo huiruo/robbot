@@ -58,6 +58,24 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS sessions_account_deleted_idx ON sessions(account_id, deleted_at);
     `,
   },
+  {
+    id: '0002_runtime_session_and_messages',
+    sql: `
+      ALTER TABLE sessions ADD COLUMN harness_session_id TEXT;
+      ALTER TABLE sessions ADD COLUMN harness_instance_id TEXT;
+
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'completed',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS messages_session_created_idx ON messages(session_id, created_at);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

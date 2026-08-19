@@ -1,5 +1,5 @@
 {
-  "name": "robbot",
+  "name": "@robbot/desktop",
   "version": "1.0.0",
   "main": "dist-electron/main/index.js",
   "scripts": {
@@ -12,7 +12,7 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "build": "npm run build:renderer && npm run build:electron",
     "start": "npm run build && electron-forge start",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run build",
     "package": "npm run build && electron-forge package",
     "make": "npm run build && electron-forge make"
   },
@@ -37,6 +37,8 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
+    "@robbot/core": "workspace:*",
+    "@robbot/dsh-adapter": "workspace:*",
     "electron-squirrel-startup": "^1.0.1"
   }
 }

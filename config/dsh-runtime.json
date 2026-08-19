@@ -1,0 +1,6 @@
+{
+  "submodule": "vendor/deepseek-harness",
+  "protocol": "acp",
+  "profile": "acp",
+  "buildRequired": true
+}

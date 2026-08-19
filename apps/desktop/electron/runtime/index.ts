@@ -1,3 +1,11 @@
-export function initializeRuntime(): void {
-  // Runtime services will be initialized here as desktop features are added.
+import { HarnessService } from '../main/harness/harness-service';
+
+export interface RuntimeServices {
+  harness: HarnessService;
+}
+
+export function initializeRuntime(): RuntimeServices {
+  return {
+    harness: new HarnessService(),
+  };
 }

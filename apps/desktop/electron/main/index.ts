@@ -10,8 +10,8 @@ if (squirrelStartup) {
 }
 
 async function bootstrap(): Promise<void> {
-  initializeRuntime();
-  registerIpcHandlers();
+  const services = initializeRuntime();
+  registerIpcHandlers(services);
 
   await createMainWindow();
 

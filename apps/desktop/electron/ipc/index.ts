@@ -1,3 +1,7 @@
-export function registerIpcHandlers(): void {
-  // IPC handlers will be registered here as desktop features are added.
+import { ipcMain } from 'electron';
+
+import type { RuntimeServices } from '../runtime';
+
+export function registerIpcHandlers(services: RuntimeServices): void {
+  ipcMain.handle('harness:get-status', () => services.harness.getStatus());
 }

@@ -1,4 +1,4 @@
-import { contextBridge } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('robbot', {
   app: {
@@ -8,5 +8,8 @@ contextBridge.exposeInMainWorld('robbot', {
     chrome: process.versions.chrome,
     electron: process.versions.electron,
     node: process.versions.node,
+  },
+  harness: {
+    getStatus: () => ipcRenderer.invoke('harness:get-status'),
   },
 });

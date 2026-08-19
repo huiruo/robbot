@@ -1,0 +1,17 @@
+{
+  "name": "@robbot/dsh-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "pnpm --filter @robbot/core build && pnpm --filter @robbot/dsh-adapter build && tsc -p tsconfig.json && node --test --test-concurrency=1 dist/**/*.test.js"
+  },
+  "dependencies": {
+    "@robbot/core": "workspace:*",
+    "@robbot/dsh-adapter": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

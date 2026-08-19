@@ -1,12 +1,21 @@
 {
   "name": "robbot",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "pnpm --filter @robbot/desktop dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:dsh": "pnpm --filter @robbot/dsh-contract test",
+    "dsh:setup": "node --import tsx scripts/dsh-setup.ts",
+    "dsh:build": "node --import tsx scripts/dsh-build.ts",
+    "dsh:update": "node --import tsx scripts/dsh-update.ts",
+    "dsh:info": "node --import tsx scripts/dsh-info.ts"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.20.6",
+    "typescript": "^7.0.2"
+  }
 }

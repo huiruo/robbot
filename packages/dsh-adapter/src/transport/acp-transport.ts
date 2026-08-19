@@ -145,13 +145,16 @@ export class AcpTransport implements HarnessTransport {
   }
 
   private async connectAndInitialize(): Promise<void> {
+    console.info('[robbot:acp] starting runtime');
     const processHandle = await this.runtimeManager.start('acp');
     this.channel = processHandle.getChannel();
     this.attachReader(this.channel);
+    console.info('[robbot:acp] sending initialize');
     await this.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: {},
     });
+    console.info('[robbot:acp] initialized');
   }
 
   private async request<T = unknown>(method: string, params?: unknown): Promise<T> {
@@ -174,6 +177,11 @@ export class AcpTransport implements HarnessTransport {
       });
     });
 
+    console.info('[robbot:acp] -> request', {
+      id,
+      method,
+      params: summarizeRpcParams(params),
+    });
     this.channel.send(message);
     return response;
   }
@@ -196,6 +204,12 @@ export class AcpTransport implements HarnessTransport {
 
   private handleMessage(message: JsonRpcResponse | JsonRpcRequest): void {
     if ('id' in message && message.id !== undefined && ('result' in message || 'error' in message)) {
+      console.info('[robbot:acp] <- response', {
+        id: message.id,
+        ok: !message.error,
+        error: message.error?.message,
+      });
+
       const pending = this.pending.get(message.id);
       if (!pending) {
         return;
@@ -213,6 +227,12 @@ export class AcpTransport implements HarnessTransport {
     if (!('method' in message)) {
       return;
     }
+
+    console.info('[robbot:acp] <- notification/request', {
+      id: message.id,
+      method: message.method,
+      params: summarizeRpcParams(message.params),
+    });
 
     if (message.method === 'session/update') {
       this.handleSessionUpdate(message.params);
@@ -283,6 +303,48 @@ export class AcpTransport implements HarnessTransport {
     }
     return queue;
   }
+}
+
+function summarizeRpcParams(params: unknown): unknown {
+  if (!params || typeof params !== 'object') {
+    return params;
+  }
+
+  const value = params as Record<string, unknown>;
+  const summary: Record<string, unknown> = {};
+
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'prompt') {
+      summary.prompt = Array.isArray(item) ? `[${item.length} item(s)]` : typeof item;
+      continue;
+    }
+
+    if (key === 'content') {
+      summary.content = summarizeContent(item);
+      continue;
+    }
+
+    if (key === 'update') {
+      summary.update = summarizeRpcParams(item);
+      continue;
+    }
+
+    summary[key] = item;
+  }
+
+  return summary;
+}
+
+function summarizeContent(content: unknown): unknown {
+  if (!content || typeof content !== 'object') {
+    return content;
+  }
+
+  const value = content as { type?: unknown; text?: unknown };
+  return {
+    type: value.type,
+    textLength: typeof value.text === 'string' ? value.text.length : undefined,
+  };
 }
 
 class AsyncEventQueue<T> {

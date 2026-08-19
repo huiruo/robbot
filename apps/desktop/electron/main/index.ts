@@ -13,6 +13,10 @@ async function bootstrap(): Promise<void> {
   const services = initializeRuntime();
   registerIpcHandlers(services);
 
+  app.on('before-quit', () => {
+    void services.harness.dispose();
+  });
+
   await createMainWindow();
 
   app.on('activate', async () => {

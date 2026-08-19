@@ -1,117 +1,31 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { useEffect, useMemo, useState } from 'react'
+import { Activity, CheckCircle2, ChevronRight, CircleAlert, Clock3, Code2, Cpu, FileText, FolderOpen, Gauge, LoaderCircle, Play, RefreshCw, Send, TerminalSquare, XCircle } from 'lucide-react'
+import type { HarnessLogEntry, HarnessRuntimeStatus } from './robbot-api'
 import './App.css'
 
+type RunState = 'idle' | 'loading' | 'success' | 'error'
+const statusMeta: Record<string, { label: string; tone: string; icon: typeof CheckCircle2 }> = {
+  ready: { label: 'Ready', tone: 'text-emerald-700 bg-emerald-50', icon: CheckCircle2 }, running: { label: 'Running', tone: 'text-amber-700 bg-amber-50', icon: Activity }, missing: { label: 'Missing', tone: 'text-rose-700 bg-rose-50', icon: XCircle }, not_installed: { label: 'Not installed', tone: 'text-rose-700 bg-rose-50', icon: XCircle }, unknown: { label: 'Loading', tone: 'text-slate-600 bg-slate-100', icon: LoaderCircle },
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [status, setStatus] = useState<HarnessRuntimeStatus | null>(null)
+  const [prompt, setPrompt] = useState('Reply exactly: ROBBOT_DESKTOP_OK')
+  const [answer, setAnswer] = useState(''); const [eventCount, setEventCount] = useState(0); const [sessionId, setSessionId] = useState('')
+  const [runState, setRunState] = useState<RunState>('idle'); const [error, setError] = useState(''); const [logs, setLogs] = useState<HarnessLogEntry[]>([]); const [showLogs, setShowLogs] = useState(false)
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
+  useEffect(() => { const dispose = window.robbot.harness.onLog((entry) => setLogs((items) => [...items.slice(-99), entry])); void refreshStatus(); return dispose }, [])
+  async function refreshStatus() { try { setStatus(await window.robbot.harness.getStatus()) } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } }
+  async function runPrompt() { setRunState('loading'); setError(''); setAnswer(''); setEventCount(0); setSessionId(''); setLogs([]); try { const result = await window.robbot.harness.runPrompt(prompt); setAnswer(result.text); setEventCount(result.events.length); setSessionId(result.sessionId); setRunState('success'); await refreshStatus() } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setRunState('error'); await refreshStatus() } }
+  const meta = statusMeta[status?.status ?? 'unknown']; const StatusIcon = meta.icon; const latestLogs = useMemo(() => [...logs].reverse().slice(0, 6), [logs])
 
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+  return <main className="grid h-full min-h-0 grid-cols-[248px_minmax(0,1fr)] overflow-hidden bg-white">
+    <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-[#fbfbfc]"><div className="border-b border-slate-200 px-5 pb-5 pt-6"><div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.16em] text-emerald-600"><Cpu className="h-3.5 w-3.5" /> Desktop</div><h1 className="m-0 text-[24px] font-semibold tracking-tight text-slate-900">Robbot Skills</h1><p className="mt-2 text-[12px] leading-5 text-slate-500">Local harness workspace</p></div><nav className="flex-1 space-y-1 overflow-auto p-4 text-[13px]"><div className="mb-3 px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Workspace</div><button className="flex w-full items-center gap-2 rounded-lg bg-slate-900 px-3 py-2.5 text-left font-medium text-white"><FolderOpen className="h-4 w-4" /> Harness Console</button><button onClick={() => setShowLogs(true)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-slate-500 hover:bg-slate-100"><TerminalSquare className="h-4 w-4" /> Runtime Logs <span className="ml-auto rounded bg-slate-200 px-1.5 py-0.5 text-[10px]">{logs.length}</span></button><div className="mb-3 mt-7 px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Runtime</div><div className="rounded-lg border border-slate-200 bg-white p-3"><div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-slate-700"><Gauge className="h-4 w-4 text-emerald-600" /> DSH ACP</div><div className="truncate font-mono text-[10px] text-slate-400" title={status?.runtimeRoot}>{status?.runtimeRoot ?? 'Resolving runtime...'}</div></div></nav><div className="border-t border-slate-200 p-4"><div className="flex items-center gap-2 text-[12px] text-slate-500"><span className={`h-2 w-2 rounded-full ${status?.status === 'ready' ? 'bg-emerald-500' : 'bg-amber-400 status-pulse'}`} /> Local runtime {meta.label}</div><div className="mt-1 pl-4 text-[11px] text-slate-400">Electron {window.robbot.versions.electron}</div></div></aside>
+    <section className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[#f6f7f9]"><header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4"><div><div className="text-[15px] font-semibold text-slate-900">Harness Console</div><div className="mt-0.5 text-[12px] text-slate-500">Run a prompt through the local DeepSeek Harness</div></div><div className="flex items-center gap-3"><div className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium ${meta.tone}`}><StatusIcon className="h-3.5 w-3.5" /> {meta.label}</div><button title="Refresh runtime status" className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900" onClick={() => void refreshStatus()}><RefreshCw className="h-4 w-4" /></button></div></header>
+      <div className="min-h-0 overflow-y-auto p-6"><div className="mx-auto max-w-[980px] space-y-4"><section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-center justify-between"><div><h2 className="m-0 text-[15px] font-semibold text-slate-900">New run</h2><p className="mt-1 text-[12px] text-slate-500">Send a test prompt to validate the renderer-to-harness path.</p></div><span className="rounded-md bg-slate-100 px-2 py-1 font-mono text-[10px] text-slate-500">POST /session/prompt</span></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={4} className="w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 font-mono text-[13px] leading-5 text-slate-800 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10" placeholder="Enter a prompt..." /><div className="mt-3 flex items-center justify-between"><span className="text-[11px] text-slate-400">{prompt.length} characters</span><button onClick={() => void runPrompt()} disabled={runState === 'loading'} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2.5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60">{runState === 'loading' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} {runState === 'loading' ? 'Running...' : 'Run prompt'}</button></div></section>
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-slate-400" /><h2 className="m-0 text-[15px] font-semibold text-slate-900">Run result</h2></div><span className="text-[11px] text-slate-400">{eventCount ? `${eventCount} events` : 'No events yet'}</span></div><div className="p-5">{error ? <div className="flex gap-2 rounded-lg bg-rose-50 p-3 text-[13px] text-rose-700"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><pre className="m-0 whitespace-pre-wrap font-sans">{error}</pre></div> : answer ? <div className="rounded-lg bg-slate-950 p-4 text-[13px] leading-6 text-slate-100"><div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-emerald-400"><Code2 className="h-3 w-3" /> Assistant output</div><pre className="m-0 whitespace-pre-wrap font-mono">{answer}</pre></div> : <div className="flex min-h-24 items-center justify-center text-center text-[13px] text-slate-400"><div><Play className="mx-auto mb-2 h-5 w-5" /><p className="m-0">Run a prompt to see the assistant output here.</p></div></div>}{sessionId && <div className="mt-4 flex items-center gap-2 text-[11px] text-slate-400"><Clock3 className="h-3.5 w-3.5" /> Session <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-slate-600">{sessionId}</code></div>}</div></section>
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm"><button onClick={() => setShowLogs((value) => !value)} className="flex w-full items-center justify-between px-5 py-4 text-left"><div className="flex items-center gap-2"><Activity className="h-4 w-4 text-slate-400" /><h2 className="m-0 text-[15px] font-semibold text-slate-900">Request timeline</h2><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{logs.length}</span></div><ChevronRight className={`h-4 w-4 text-slate-400 transition ${showLogs ? 'rotate-90' : ''}`} /></button>{showLogs && <div className="border-t border-slate-100 p-4">{latestLogs.length ? <ol className="space-y-2">{latestLogs.map((log, index) => <li key={`${log.at}-${index}`} className="grid grid-cols-[auto_auto_1fr] items-baseline gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px]"><span className="font-mono text-slate-400">{new Date(log.at).toLocaleTimeString()}</span><span className="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] uppercase text-slate-500">{log.source}</span><span className="text-slate-700">{log.message}</span></li>)}</ol> : <p className="m-0 text-[12px] text-slate-400">No runtime events yet.</p>}</div>}</section></div></div></section>
+  </main>
 }
 
 export default App

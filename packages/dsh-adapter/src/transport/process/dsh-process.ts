@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -16,13 +16,22 @@ export class DshProcess {
       return this.channel;
     }
 
-    this.child = spawn(process.execPath, [
+    const nodeExecutable = resolveNodeExecutable();
+    const args = [
       '--import',
       'tsx',
       'packages/examples/acp-demo/src/bin.ts',
       '--config',
       'examples/acp-agent/cordis.yml',
-    ], {
+    ];
+
+    console.info('[robbot:dsh-process] starting DSH ACP process', {
+      cwd: this.cwd,
+      nodeExecutable,
+      args,
+    });
+
+    this.child = spawn(nodeExecutable, args, {
       cwd: this.cwd,
       stdio: 'pipe',
       env: {
@@ -34,7 +43,17 @@ export class DshProcess {
     });
 
     this.child.once('error', (error: Error) => {
+      console.error('[robbot:dsh-process] failed to start DSH ACP process', error);
       throw new HarnessError('Failed to start DSH ACP process.', 'transport_error', error);
+    });
+
+    this.child.once('exit', (code, signal) => {
+      console.info('[robbot:dsh-process] DSH ACP process exited', { code, signal });
+    });
+
+    this.child.stderr.setEncoding('utf8');
+    this.child.stderr.on('data', (chunk: string) => {
+      console.warn('[robbot:dsh-process:stderr]', chunk.trim());
     });
 
     this.channel = new StdioChannel(this.child.stdin, this.child.stdout, this.child.stderr);
@@ -54,10 +73,29 @@ export class DshProcess {
       return;
     }
 
+    console.info('[robbot:dsh-process] stopping DSH ACP process');
     this.child.kill('SIGTERM');
     this.child = undefined;
     this.channel = undefined;
   }
+}
+
+function resolveNodeExecutable(): string {
+  if (!isElectronRuntime()) {
+    return process.execPath;
+  }
+
+  const resolved = spawnSync('command', ['-v', 'node'], {
+    shell: true,
+    encoding: 'utf8',
+  });
+  const nodePath = resolved.stdout.trim();
+
+  return nodePath || 'node';
+}
+
+function isElectronRuntime(): boolean {
+  return Boolean(process.versions.electron);
 }
 
 function readDeepSeekApiKeyFromRobbotEnv(dshRoot: string): string | undefined {

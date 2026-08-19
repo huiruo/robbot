@@ -21,14 +21,20 @@ export interface HarnessLogEntry {
 }
 
 export type HarnessLogSink = (entry: HarnessLogEntry) => void;
+export type HarnessEventSink = (event: HarnessEvent) => void;
 
 export class HarnessService {
   private readonly runtimeManager = new DshRuntimeManager();
   private readonly harness = new DshLocalHarness({ runtimeManager: this.runtimeManager });
   private logSink?: HarnessLogSink;
+  private eventSink?: HarnessEventSink;
 
   setLogSink(logSink: HarnessLogSink | undefined): void {
     this.logSink = logSink;
+  }
+
+  setEventSink(eventSink: HarnessEventSink | undefined): void {
+    this.eventSink = eventSink;
   }
 
   getStatus(): HarnessRuntimeStatus {
@@ -69,6 +75,7 @@ export class HarnessService {
     this.log('harness', 'sending prompt to DSH ACP', { sessionId: session.id });
     for await (const event of this.harness.run(session.id, { prompt: normalizedPrompt })) {
       events.push(event);
+      this.eventSink?.(event);
       this.log('dsh', `event: ${event.type}`, summarizeHarnessEvent(event));
       if (event.type === 'assistant.delta') {
         text += event.text;

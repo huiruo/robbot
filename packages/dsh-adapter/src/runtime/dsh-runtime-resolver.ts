@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { defaultDshRuntimeConfig, type DshRuntimeConfig } from './runtime-config.js';
@@ -11,7 +11,7 @@ export interface ResolvedDshRuntime {
 export class DshRuntimeResolver {
   constructor(
     private readonly appRoot = findRobbotRoot(process.cwd()),
-    private readonly config: DshRuntimeConfig = defaultDshRuntimeConfig,
+    private readonly config: DshRuntimeConfig = loadRuntimeConfig(appRoot),
   ) {}
 
   resolveRuntime(): ResolvedDshRuntime {
@@ -28,6 +28,16 @@ export class DshRuntimeResolver {
 
   isRuntimeInstalled(): boolean {
     return existsSync(path.join(this.resolveRuntime().root, 'node_modules'));
+  }
+}
+
+function loadRuntimeConfig(appRoot: string): DshRuntimeConfig {
+  const configPath = path.join(appRoot, 'config/dsh-runtime.json');
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, 'utf8')) as Partial<DshRuntimeConfig>;
+    return { ...defaultDshRuntimeConfig, ...parsed };
+  } catch {
+    return defaultDshRuntimeConfig;
   }
 }
 

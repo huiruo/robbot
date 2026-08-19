@@ -2,5 +2,6 @@
   "submodule": "vendor/deepseek-harness",
   "protocol": "acp",
   "profile": "acp",
-  "buildRequired": true
+  "buildRequired": true,
+  "configPath": "../../config/dsh-flash.cordis.yml"
 }

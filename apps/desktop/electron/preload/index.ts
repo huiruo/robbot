@@ -38,5 +38,13 @@ contextBridge.exposeInMainWorld('robbot', {
         ipcRenderer.off('harness:log', handler);
       };
     },
+    onEvent: (listener: (event: unknown) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, harnessEvent: unknown) => listener(harnessEvent);
+      ipcRenderer.on('harness:event', handler);
+
+      return () => {
+        ipcRenderer.off('harness:event', handler);
+      };
+    },
   },
 });

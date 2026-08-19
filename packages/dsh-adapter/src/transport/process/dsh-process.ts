@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { accessSync, constants, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { HarnessError } from '@robbot/core';
@@ -9,7 +9,10 @@ import { StdioChannel } from './stdio-channel.js';
 export class DshProcess {
   private child?: ChildProcessWithoutNullStreams;
   private channel?: StdioChannel;
-  constructor(private readonly cwd: string) {}
+  constructor(
+    private readonly cwd: string,
+    private readonly configPath = 'examples/acp-agent/cordis.yml',
+  ) {}
 
   async start(): Promise<StdioChannel> {
     if (this.channel) {
@@ -22,7 +25,7 @@ export class DshProcess {
       'tsx',
       'packages/examples/acp-demo/src/bin.ts',
       '--config',
-      'examples/acp-agent/cordis.yml',
+      this.configPath,
     ];
 
     console.info('[robbot:dsh-process] starting DSH ACP process', {
@@ -85,13 +88,43 @@ function resolveNodeExecutable(): string {
     return process.execPath;
   }
 
-  const resolved = spawnSync('command', ['-v', 'node'], {
-    shell: true,
+  for (const candidate of [
+    process.env.ROBBOT_NODE_EXECUTABLE,
+    process.env.NODE_BINARY,
+    resolveNodeFromPath(),
+    '/opt/homebrew/bin/node',
+    '/usr/local/bin/node',
+    '/usr/bin/node',
+  ]) {
+    if (candidate && isExecutableFile(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new HarnessError(
+    'Unable to find a Node.js executable for starting DSH from Electron. Set ROBBOT_NODE_EXECUTABLE=/absolute/path/to/node.',
+    'transport_error',
+  );
+}
+
+function resolveNodeFromPath(): string | undefined {
+  const resolved = spawnSync('/usr/bin/env', ['node', '-p', 'process.execPath'], {
     encoding: 'utf8',
   });
-  const nodePath = resolved.stdout.trim();
+  if (resolved.status !== 0) {
+    return undefined;
+  }
 
-  return nodePath || 'node';
+  return resolved.stdout.trim() || undefined;
+}
+
+function isExecutableFile(candidate: string): boolean {
+  try {
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isElectronRuntime(): boolean {

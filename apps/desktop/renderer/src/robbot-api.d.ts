@@ -9,6 +9,16 @@ export interface HarnessRunResult {
   events: Array<{ type: string; [key: string]: unknown }>;
 }
 
+export type HarnessEvent =
+  | { type: 'run.started'; runId: string; sessionId: string }
+  | { type: 'assistant.delta'; text: string }
+  | { type: 'tool.started'; toolCallId: string; name: string; input?: unknown }
+  | { type: 'tool.output'; toolCallId: string; output: string }
+  | { type: 'approval.required'; approval: unknown }
+  | { type: 'tool.completed'; toolCallId: string; result?: unknown }
+  | { type: 'run.completed'; runId: string }
+  | { type: 'run.failed'; runId?: string; error: { message: string; code?: string } };
+
 export interface HarnessLogEntry {
   at: string;
   source: 'renderer' | 'main' | 'harness' | 'dsh';
@@ -112,6 +122,7 @@ export interface RobbotApi {
     getStatus: () => Promise<HarnessRuntimeStatus>;
     runPrompt: (prompt: string) => Promise<HarnessRunResult>;
     onLog: (listener: (entry: HarnessLogEntry) => void) => () => void;
+    onEvent: (listener: (event: HarnessEvent) => void) => () => void;
   };
 }
 

@@ -31,7 +31,11 @@ export class DshRuntimeManager {
       return existing;
     }
 
-    const processHandle = new DshProcess(this.resolveRuntime().root);
+    const runtime = this.resolveRuntime();
+    const processHandle = new DshProcess(
+      runtime.root,
+      process.env.ROBBOT_DSH_CONFIG ?? runtime.config.configPath,
+    );
     await processHandle.start();
     this.processes.set(sessionId, processHandle);
     return processHandle;

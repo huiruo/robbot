@@ -59,6 +59,9 @@ export function registerIpcHandlers(services: RuntimeServices): void {
     services.harness.setLogSink((entry) => {
       event.sender.send('harness:log', entry);
     });
+    services.harness.setEventSink((harnessEvent) => {
+      event.sender.send('harness:event', harnessEvent);
+    });
 
     return services.harness.runPrompt(prompt);
   });

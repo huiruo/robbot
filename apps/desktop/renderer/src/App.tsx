@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, CheckCircle2, ChevronRight, CircleAlert, Clock3, Code2, Cpu, FileText, FolderOpen, Gauge, LoaderCircle, Play, RefreshCw, Send, TerminalSquare, XCircle } from 'lucide-react'
-import type { HarnessLogEntry, HarnessRuntimeStatus } from './robbot-api'
+import type { HarnessEvent, HarnessLogEntry, HarnessRuntimeStatus } from './robbot-api'
 import './App.css'
 
 type RunState = 'idle' | 'loading' | 'success' | 'error'
@@ -13,10 +13,79 @@ function App() {
   const [prompt, setPrompt] = useState('Reply exactly: ROBBOT_DESKTOP_OK')
   const [answer, setAnswer] = useState(''); const [eventCount, setEventCount] = useState(0); const [sessionId, setSessionId] = useState('')
   const [runState, setRunState] = useState<RunState>('idle'); const [error, setError] = useState(''); const [logs, setLogs] = useState<HarnessLogEntry[]>([]); const [showLogs, setShowLogs] = useState(false)
+  const pendingAnswerRef = useRef('')
+  const typingTimerRef = useRef<number | null>(null)
+  const receivedDeltaRef = useRef(false)
 
-  useEffect(() => { const dispose = window.robbot.harness.onLog((entry) => setLogs((items) => [...items.slice(-99), entry])); void refreshStatus(); return dispose }, [])
+  useEffect(() => {
+    const disposeLog = window.robbot.harness.onLog((entry) => setLogs((items) => [...items.slice(-99), entry]))
+    const disposeEvent = window.robbot.harness.onEvent(handleHarnessEvent)
+    void refreshStatus()
+
+    return () => {
+      disposeLog()
+      disposeEvent()
+      stopTypewriter()
+    }
+  }, [])
   async function refreshStatus() { try { setStatus(await window.robbot.harness.getStatus()) } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } }
-  async function runPrompt() { setRunState('loading'); setError(''); setAnswer(''); setEventCount(0); setSessionId(''); setLogs([]); try { const result = await window.robbot.harness.runPrompt(prompt); setAnswer(result.text); setEventCount(result.events.length); setSessionId(result.sessionId); setRunState('success'); await refreshStatus() } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setRunState('error'); await refreshStatus() } }
+  function startTypewriter() {
+    if (typingTimerRef.current !== null) {
+      return
+    }
+
+    typingTimerRef.current = window.setInterval(() => {
+      if (!pendingAnswerRef.current) {
+        stopTypewriter()
+        return
+      }
+
+      const next = pendingAnswerRef.current.slice(0, 3)
+      pendingAnswerRef.current = pendingAnswerRef.current.slice(next.length)
+      setAnswer((value) => `${value}${next}`)
+    }, 16)
+  }
+  function stopTypewriter() {
+    if (typingTimerRef.current === null) {
+      return
+    }
+
+    window.clearInterval(typingTimerRef.current)
+    typingTimerRef.current = null
+  }
+  function enqueueAssistantText(text: string) {
+    if (!text) {
+      return
+    }
+
+    receivedDeltaRef.current = true
+    pendingAnswerRef.current += text
+    startTypewriter()
+  }
+  function handleHarnessEvent(event: HarnessEvent) {
+    setEventCount((count) => count + 1)
+
+    if (event.type === 'run.started') {
+      setSessionId(event.sessionId)
+      return
+    }
+
+    if (event.type === 'assistant.delta') {
+      enqueueAssistantText(event.text)
+      return
+    }
+
+    if (event.type === 'run.completed') {
+      setRunState('success')
+      return
+    }
+
+    if (event.type === 'run.failed') {
+      setError(event.error.message)
+      setRunState('error')
+    }
+  }
+  async function runPrompt() { setRunState('loading'); setError(''); setAnswer(''); setEventCount(0); setSessionId(''); setLogs([]); pendingAnswerRef.current = ''; receivedDeltaRef.current = false; stopTypewriter(); try { const result = await window.robbot.harness.runPrompt(prompt); if (!receivedDeltaRef.current) { setAnswer(result.text) } setEventCount((count) => Math.max(count, result.events.length)); setSessionId(result.sessionId); setRunState('success'); await refreshStatus() } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setRunState('error'); await refreshStatus() } }
   const meta = statusMeta[status?.status ?? 'unknown']; const StatusIcon = meta.icon; const latestLogs = useMemo(() => [...logs].reverse().slice(0, 6), [logs])
 
   return <main className="grid h-full min-h-0 grid-cols-[248px_minmax(0,1fr)] overflow-hidden bg-white">

@@ -1,12 +1,20 @@
 {
   "name": "robbot",
   "version": "1.0.0",
-  "main": "main.js",
+  "main": "dist-electron/main/index.js",
   "scripts": {
-    "start": "electron-forge start",
+    "dev": "npm run build:electron && concurrently -k -n renderer,tsc,electron \"npm run dev:renderer\" \"npm run dev:electron:watch\" \"npm run dev:electron:start\"",
+    "dev:renderer": "npm --prefix renderer run dev -- --host 127.0.0.1 --port 5173 --strictPort",
+    "dev:electron": "npm run build:electron && npm run dev:electron:start",
+    "dev:electron:watch": "tsc -p tsconfig.electron.json --watch",
+    "dev:electron:start": "wait-on tcp:127.0.0.1:5173 dist-electron/main/index.js && cross-env NODE_ENV=development ROBBOT_RENDERER_DEV_URL=http://127.0.0.1:5173 nodemon --delay 750ms --watch dist-electron --ext js,json --exec \"electron .\"",
+    "build:renderer": "npm --prefix renderer run build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build": "npm run build:renderer && npm run build:electron",
+    "start": "npm run build && electron-forge start",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "package": "electron-forge package",
-    "make": "electron-forge make"
+    "package": "npm run build && electron-forge package",
+    "make": "npm run build && electron-forge make"
   },
   "author": "",
   "license": "ISC",
@@ -20,7 +28,13 @@
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
     "@electron-forge/plugin-fuses": "^7.11.2",
     "@electron/fuses": "^1.8.0",
-    "electron": "^43.4.1"
+    "@types/node": "^26.2.0",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
+    "electron": "^43.4.1",
+    "nodemon": "^3.1.14",
+    "typescript": "^7.0.2",
+    "wait-on": "^9.1.0"
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1"

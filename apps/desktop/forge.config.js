@@ -4,6 +4,21 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 module.exports = {
   packagerConfig: {
     asar: true,
+    ignore: [
+      /^\/renderer\/node_modules(\/|$)/,
+      /^\/renderer\/src(\/|$)/,
+      /^\/renderer\/public(\/|$)/,
+      /^\/renderer\/\.gitignore$/,
+      /^\/renderer\/README\.md$/,
+      /^\/renderer\/eslint\.config\.js$/,
+      /^\/renderer\/index\.html$/,
+      /^\/renderer\/package-lock\.json$/,
+      /^\/renderer\/package\.json$/,
+      /^\/renderer\/tsconfig.*\.json$/,
+      /^\/renderer\/vite\.config\.ts$/,
+      /^\/electron\/.*\.ts$/,
+      /^\/tsconfig\.electron\.json$/,
+    ],
   },
   rebuildConfig: {},
   makers: [

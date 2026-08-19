@@ -77,8 +77,8 @@ web_modules/
 # Next.js build output
 .next
 out
-client/renderer/out
-client/dist-electron
+apps/desktop/renderer/out
+apps/desktop/dist-electron
 agent/python/storage/*.db
 agent/python/storage/*.jsonl
 

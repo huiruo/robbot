@@ -56,11 +56,14 @@ jobs:
       - name: Rewrite git SSH URLs to HTTPS
         run: 'git config --global url.https://github.com/.insteadOf git@github.com:'
 
-      - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Install desktop workspace dependencies
+        run: pnpm install --frozen-lockfile --filter @robbot/desktop...
 
       - name: Install renderer dependencies
         run: npm ci --prefix apps/desktop/renderer
+
+      - name: Verify Electron dependency
+        run: pnpm --filter @robbot/desktop exec node -e "console.log(require.resolve('electron/package.json'))"
 
       - name: Publish draft GitHub Release
         run: pnpm --filter @robbot/desktop run publish

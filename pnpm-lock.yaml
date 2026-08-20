@@ -35,6 +35,9 @@ importers:
       electron-squirrel-startup:
         specifier: ^1.0.1
         version: 1.0.1
+      node-addon-api:
+        specifier: ^8.9.2
+        version: 8.9.2
     devDependencies:
       '@electron-forge/cli':
         specifier: ^7.11.2
@@ -79,7 +82,7 @@ importers:
         specifier: ^0.31.10
         version: 0.31.10
       electron:
-        specifier: ^43.4.1
+        specifier: 43.4.1
         version: 43.4.1
       nodemon:
         specifier: ^3.1.14

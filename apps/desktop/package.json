@@ -41,7 +41,7 @@
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.10",
-    "electron": "^43.4.1",
+    "electron": "43.4.1",
     "nodemon": "^3.1.14",
     "typescript": "^7.0.2",
     "wait-on": "^9.1.0"
@@ -51,6 +51,7 @@
     "@robbot/dsh-adapter": "workspace:*",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2",
-    "electron-squirrel-startup": "^1.0.1"
+    "electron-squirrel-startup": "^1.0.1",
+    "node-addon-api": "^8.9.2"
   }
 }

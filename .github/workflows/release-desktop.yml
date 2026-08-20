@@ -56,16 +56,58 @@ jobs:
       - name: Rewrite git SSH URLs to HTTPS
         run: 'git config --global url.https://github.com/.insteadOf git@github.com:'
 
-      - name: Install desktop workspace dependencies
-        run: pnpm install --frozen-lockfile --filter @robbot/desktop...
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Install renderer dependencies
         run: npm ci --prefix apps/desktop/renderer
+
+      - name: Prepare app node_modules for Forge
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const appDir = path.resolve('apps/desktop');
+          const appNodeModules = path.join(appDir, 'node_modules');
+          const packages = [
+            '@robbot/core',
+            '@robbot/dsh-adapter',
+            'better-sqlite3',
+            'drizzle-orm',
+            'electron-squirrel-startup',
+            'node-addon-api',
+          ];
+
+          fs.mkdirSync(appNodeModules, { recursive: true });
+
+          for (const packageName of packages) {
+            const packageJsonPath = require.resolve(`${packageName}/package.json`, {
+              paths: [appDir, process.cwd()],
+            });
+            const target = path.dirname(packageJsonPath);
+            const linkPath = path.join(appNodeModules, ...packageName.split('/'));
+
+            fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+
+            if (fs.existsSync(linkPath)) {
+              continue;
+            }
+
+            fs.symlinkSync(target, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
+            console.log(`${packageName} -> ${target}`);
+          }
+          NODE
 
       - name: Verify Electron dependency
         working-directory: apps/desktop
         run: >-
           node -e "console.log(require.resolve('electron/package.json', { paths: [process.cwd()] }))"
+
+      - name: Verify native package dependencies
+        working-directory: apps/desktop
+        run: >-
+          node -e "for (const pkg of ['better-sqlite3/package.json', 'node-addon-api/package.json']) console.log(require.resolve(pkg, { paths: [process.cwd()] }))"
 
       - name: Publish draft GitHub Release
         run: pnpm --filter @robbot/desktop run publish

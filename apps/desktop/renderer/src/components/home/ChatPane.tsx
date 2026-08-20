@@ -12,6 +12,7 @@ export function ChatPane(props: {
   messages: MessageRecord[]
   activeRun: ActiveRunRef | undefined
   approval: ApprovalState | undefined
+  pendingRetryMessageId: string | null
   prompt: string
   error: string
   onPromptChange(value: string): void
@@ -48,9 +49,9 @@ export function ChatPane(props: {
           {props.activeRun ? (
             <button
               className="flex items-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-[13px] text-rose-700 hover:bg-rose-50"
-              disabled={!props.activeRun.capabilities.cancelCurrentRun}
+              disabled={!props.activeRun.capabilities.cancelCurrentRun && !props.activeRun.capabilities.terminateRuntime}
               onClick={props.onCancel}
-              title={props.activeRun.capabilities.cancelCurrentRun ? 'Stop' : 'SDK runs do not support per-session Stop yet'}
+              title={props.activeRun.capabilities.cancelCurrentRun ? 'Stop' : 'Stop by terminating the current runtime'}
             >
               <Square className="h-3.5 w-3.5" />
               Stop
@@ -70,7 +71,8 @@ export function ChatPane(props: {
             <ChatMessageCard
               key={message.id}
               message={message}
-              retryDisabled={Boolean(props.activeRun)}
+              retryDisabled={Boolean(props.activeRun) || Boolean(props.pendingRetryMessageId)}
+              retryPending={props.pendingRetryMessageId === message.id}
               onRetry={props.onRetry}
             />
           ))}

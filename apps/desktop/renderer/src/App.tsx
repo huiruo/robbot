@@ -86,6 +86,7 @@ function AuthenticatedApp({ accountId, onLogout }: { accountId: string; onLogout
           messages={chatRuntime.messages}
           activeRun={chatRuntime.activeRun}
           approval={chatRuntime.approval}
+          pendingRetryMessageId={chatRuntime.pendingRetryMessageId}
           prompt={chatRuntime.prompt}
           error={workspaceChat.error}
           onPromptChange={chatRuntime.setPrompt}

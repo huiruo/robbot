@@ -18,6 +18,7 @@ export interface HarnessCapabilities {
   streaming: HarnessStreamingCapability;
   toolEvents: boolean;
   cancelCurrentRun: boolean;
+  terminateRuntime: boolean;
   approval: boolean;
   sessionResume: boolean;
 }
@@ -38,6 +39,12 @@ export interface HarnessRunInput {
   workspaceId: string;
   sessionId: string;
   prompt: string;
+  runMode?: HarnessRunMode;
+}
+
+export interface HarnessWarmupInput {
+  accountId: string;
+  workspaceId: string;
   runMode?: HarnessRunMode;
 }
 
@@ -197,6 +204,7 @@ export interface RobbotApi {
   harness: {
     getStatus: () => Promise<HarnessRuntimeStatus>;
     listActiveRuns: () => Promise<Record<string, ActiveRunRef>>;
+    warmupRuntime: (input: HarnessWarmupInput) => Promise<void>;
     runPrompt: (input: HarnessRunInput) => Promise<HarnessRunResult>;
     retryMessage: (messageId: string) => Promise<HarnessRunResult>;
     cancel: (sessionId: string) => Promise<void>;

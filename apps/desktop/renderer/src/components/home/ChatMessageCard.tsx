@@ -1,9 +1,10 @@
 import type { MessageRecord } from '../../robbot-api'
 import { RotateCcw } from 'lucide-react'
 
-export function ChatMessageCard({ message, retryDisabled, onRetry }: {
+export function ChatMessageCard({ message, retryDisabled, retryPending, onRetry }: {
   message: MessageRecord
   retryDisabled?: boolean
+  retryPending?: boolean
   onRetry?: (message: MessageRecord) => void
 }) {
   const isUser = message.role === 'user'
@@ -30,7 +31,7 @@ export function ChatMessageCard({ message, retryDisabled, onRetry }: {
               title="Retry this prompt"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Retry
+              {retryPending ? 'Retrying...' : 'Retry'}
             </button>
           </div>
         ) : null}

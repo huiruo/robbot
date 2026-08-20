@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('robbot', {
   harness: {
     getStatus: () => ipcRenderer.invoke('harness:get-status'),
     listActiveRuns: () => ipcRenderer.invoke('harness:list-active-runs'),
+    warmupRuntime: (input: unknown) => ipcRenderer.invoke('harness:warmup-runtime', input),
     runPrompt: (input: unknown) => ipcRenderer.invoke('harness:run-prompt', input),
     retryMessage: (messageId: string) => ipcRenderer.invoke('harness:retry-message', messageId),
     cancel: (sessionId: string) => ipcRenderer.invoke('harness:cancel', sessionId),

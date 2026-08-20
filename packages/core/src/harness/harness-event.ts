@@ -8,6 +8,7 @@ export type HarnessEvent =
   | { type: 'tool.output'; toolCallId: string; output: string }
   | { type: 'approval.required'; approval: ApprovalRequest }
   | { type: 'tool.completed'; toolCallId: string; result?: unknown }
+  | { type: 'runtime.activity' }
   | { type: 'run.completed'; runId: string }
   | { type: 'run.failed'; runId?: string; error: { message: string; code?: string } }
   | { type: 'run.interrupted'; runId?: string; error?: { message: string; code?: string } };

@@ -47,6 +47,7 @@ export class AcpTransport implements HarnessTransport {
       streaming: 'committed-message' as const,
       toolEvents: false,
       cancelCurrentRun: true,
+      terminateRuntime: true,
       approval: true,
       sessionResume: false,
     };
@@ -65,6 +66,10 @@ export class AcpTransport implements HarnessTransport {
       createdAt: new Date().toISOString(),
       metadata: input.metadata,
     };
+  }
+
+  async warmup(_input: CreateSessionInput): Promise<void> {
+    await this.ensureInitialized();
   }
 
   async *run(sessionId: string, input: RunInput): AsyncIterable<HarnessEvent> {
@@ -132,6 +137,20 @@ export class AcpTransport implements HarnessTransport {
   async cancel(sessionId: string): Promise<void> {
     await this.ensureInitialized();
     await this.request('session/cancel', { sessionId });
+  }
+
+  async terminate(_sessionId: string): Promise<void> {
+    await this.runtimeManager.stop('acp', 'acp');
+    for (const queue of this.eventQueues.values()) {
+      queue.push({
+        type: 'run.interrupted',
+        error: { code: 'runtime_terminated', message: 'DSH ACP runtime was terminated.' },
+      });
+    }
+    this.channel = undefined;
+    this.initialized = undefined;
+    this.pending.clear();
+    this.permissions.clear();
   }
 
   async approve(_sessionId: string, input: ApprovalInput): Promise<void> {

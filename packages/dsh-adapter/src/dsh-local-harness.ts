@@ -28,6 +28,12 @@ export class DshLocalHarness implements LocalHarness {
     return this.transportForMode(runMode ?? this.defaultRunMode()).capabilities();
   }
 
+  async warmup(input: CreateSessionInput): Promise<void> {
+    await this.runtimeManager.verifyRuntime();
+    const runMode = normalizeRunMode(input.metadata?.runMode, this.defaultRunMode());
+    await this.transportForMode(runMode).warmup(input);
+  }
+
   async createSession(input: CreateSessionInput): Promise<HarnessSession> {
     await this.runtimeManager.verifyRuntime();
     const runMode = normalizeRunMode(input.metadata?.runMode, this.defaultRunMode());
@@ -51,6 +57,12 @@ export class DshLocalHarness implements LocalHarness {
     } catch (error) {
       throw new HarnessError('DSH cancel failed.', 'run_interrupted', error);
     }
+  }
+
+  async terminate(sessionId: string): Promise<void> {
+    const transport = this.transportForSession(sessionId);
+    await transport.terminate(sessionId);
+    this.sessionModes.delete(sessionId);
   }
 
   async approve(sessionId: string, input: ApprovalInput): Promise<void> {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { HarnessRuntimeStatus, SessionRecord, WorkspaceRecord } from '../robbot-api'
 
 export type RenameTarget =
@@ -13,6 +13,7 @@ export function useWorkspaceChat(accountId: string) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
+  const warmedWorkspaceKeysRef = useRef<Set<string>>(new Set())
   const selectedWorkspaceId = workspaceId ?? workspaces[0]?.id ?? null
   const selectedSessionId = sessionId ?? sessions[0]?.id ?? null
 
@@ -39,6 +40,22 @@ export function useWorkspaceChat(accountId: string) {
     },
     [accountId, workspaceId],
   )
+
+  const warmupRuntime = useCallback((targetWorkspace: WorkspaceRecord) => {
+    const key = `${accountId}:${targetWorkspace.id}`
+    if (warmedWorkspaceKeysRef.current.has(key)) {
+      return
+    }
+
+    warmedWorkspaceKeysRef.current.add(key)
+    void window.robbot.harness.warmupRuntime({
+      accountId,
+      workspaceId: targetWorkspace.id,
+    }).catch((cause) => {
+      warmedWorkspaceKeysRef.current.delete(key)
+      console.warn('[robbot] DSH runtime warmup failed', cause)
+    })
+  }, [accountId])
 
   const loadOrCreateDefaultSession = useCallback(
     async (targetWorkspace: WorkspaceRecord) => {
@@ -70,13 +87,14 @@ export function useWorkspaceChat(accountId: string) {
       if (targetWorkspace) {
         setWorkspaceId(targetWorkspace.id)
         await loadOrCreateDefaultSession(targetWorkspace)
+        warmupRuntime(targetWorkspace)
       } else {
         setSessions([])
       }
     } catch (cause) {
       setError(errorMessage(cause))
     }
-  }, [accountId, loadOrCreateDefaultSession, refreshStatus, workspaceId])
+  }, [accountId, loadOrCreateDefaultSession, refreshStatus, warmupRuntime, workspaceId])
 
   useEffect(() => {
     queueMicrotask(() => void bootstrap())
@@ -92,17 +110,19 @@ export function useWorkspaceChat(accountId: string) {
       setWorkspaceId(selected.id)
       await refreshWorkspaces()
       await loadOrCreateDefaultSession(selected)
+      warmupRuntime(selected)
     } catch (cause) {
       setError(errorMessage(cause))
     }
-  }, [loadOrCreateDefaultSession, refreshWorkspaces])
+  }, [accountId, loadOrCreateDefaultSession, refreshWorkspaces, warmupRuntime])
 
   const openWorkspace = useCallback(
     async (target: WorkspaceRecord) => {
       setWorkspaceId(target.id)
       await loadOrCreateDefaultSession(target)
+      warmupRuntime(target)
     },
-    [loadOrCreateDefaultSession],
+    [loadOrCreateDefaultSession, warmupRuntime],
   )
 
   const createSession = useCallback(
@@ -118,8 +138,9 @@ export function useWorkspaceChat(accountId: string) {
       })
       setSessionId(created.id)
       await refreshSessions(targetWorkspace.id)
+      warmupRuntime(targetWorkspace)
     },
-    [accountId, refreshSessions, workspace],
+    [accountId, refreshSessions, warmupRuntime, workspace],
   )
 
   const startRename = useCallback((target: WorkspaceRecord | SessionRecord) => {

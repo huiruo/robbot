@@ -17,6 +17,12 @@ export interface HarnessRunInput {
   runMode?: HarnessRunMode;
 }
 
+export interface HarnessWarmupInput {
+  accountId: string;
+  workspaceId: string;
+  runMode?: HarnessRunMode;
+}
+
 export interface HarnessRunStartResult {
   runId: string;
   userMessageId: string;
@@ -51,6 +57,7 @@ export interface ActiveRun {
   buffer: string;
   flushedLength: number;
   lastFlushedAt: number;
+  lastActivityAt: number;
   status: ActiveRunStatus;
   startedAt: number;
   terminal: boolean;
@@ -90,6 +97,7 @@ export interface HarnessServiceOptions {
   sessions: SessionRepository;
   workspaces: WorkspaceRepository;
   messages: MessageRepository;
+  runInactivityTimeoutMs?: number;
 }
 
 export interface AiRuntimeSnapshot {
@@ -122,6 +130,8 @@ interface HarnessSessionResolution {
 }
 
 const HISTORY_BOOTSTRAP_MESSAGE_LIMIT = 20;
+const DEFAULT_RUN_INACTIVITY_TIMEOUT_MS = 120_000;
+const RUN_WATCHDOG_INTERVAL_MS = 5_000;
 
 export class HarnessService {
   private readonly runtimeManager = new DshRuntimeManager();
@@ -129,6 +139,9 @@ export class HarnessService {
   private readonly harnessInstanceId = `process_${Date.now()}_${randomUUID()}`;
   private readonly activeRuns = new Map<string, ActiveRun>();
   private readonly activeRunBySessionId = new Map<string, ActiveRunRef>();
+  private readonly retryingMessageIds = new Set<string>();
+  private readonly runInactivityTimeoutMs: number;
+  private readonly runWatchdog: ReturnType<typeof setInterval>;
   private readonly harnessRunModeBySessionId = new Map<string, HarnessRunMode>();
   private readonly harnessReuseIdentityBySessionId = new Map<string, HarnessReuseIdentity>();
   private readonly accountRuntimeEpoch = new Map<string, number>();
@@ -136,7 +149,9 @@ export class HarnessService {
   private eventSink?: HarnessEventSink;
 
   constructor(private readonly options: HarnessServiceOptions) {
+    this.runInactivityTimeoutMs = options.runInactivityTimeoutMs ?? DEFAULT_RUN_INACTIVITY_TIMEOUT_MS;
     this.options.messages.markStreamingInterrupted();
+    this.runWatchdog = setInterval(() => this.checkRunWatchdog(), RUN_WATCHDOG_INTERVAL_MS);
   }
 
   setLogSink(logSink: HarnessLogSink | undefined): void {
@@ -169,6 +184,36 @@ export class HarnessService {
       result[sessionId] = { ...run };
     }
     return result;
+  }
+
+  async warmup(input: HarnessWarmupInput): Promise<void> {
+    const runMode = normalizeRunMode(input.runMode, this.runtimeManager.resolveRuntime().config.protocol);
+    const workspace = this.options.workspaces.get(input.accountId, input.workspaceId);
+    const aiRuntime = resolveAiRuntimeSnapshot(this.options.accounts.get(input.accountId));
+    this.log('harness', 'warming up DSH runtime', {
+      workspaceId: input.workspaceId,
+      workspacePath: workspace.rootPath,
+      runMode,
+      aiProvider: aiRuntime?.provider,
+      aiModel: aiRuntime?.model,
+      aiConfigFingerprint: aiRuntime?.fingerprint,
+    });
+
+    await this.harness.warmup({
+      workspacePath: workspace.rootPath,
+      metadata: {
+        accountId: input.accountId,
+        runMode,
+        aiRuntime,
+      },
+    });
+    this.log('harness', 'DSH runtime warmup complete', {
+      workspaceId: input.workspaceId,
+      runMode,
+      aiProvider: aiRuntime?.provider,
+      aiModel: aiRuntime?.model,
+      aiConfigFingerprint: aiRuntime?.fingerprint,
+    });
   }
 
   async runPrompt(input: HarnessRunInput): Promise<HarnessRunStartResult> {
@@ -216,46 +261,54 @@ export class HarnessService {
 
   async retryMessage(messageId: string): Promise<HarnessRunStartResult> {
     this.log('main', 'retryMessage requested', { messageId });
+    if (this.retryingMessageIds.has(messageId)) {
+      throw new Error('This message is already being retried.');
+    }
+    this.retryingMessageIds.add(messageId);
 
-    const sourceMessage = this.options.messages.get(messageId);
-    if (sourceMessage.role !== 'assistant') {
-      throw new Error('Only assistant messages can be retried.');
-    }
-    if (!['failed', 'cancelled', 'interrupted'].includes(sourceMessage.status)) {
-      throw new Error('Only failed, cancelled, or interrupted assistant messages can be retried.');
-    }
-    if (this.activeRunBySessionId.has(sourceMessage.sessionId)) {
-      throw new Error('This session already has a running prompt.');
-    }
+    try {
+      const sourceMessage = this.options.messages.get(messageId);
+      if (sourceMessage.role !== 'assistant') {
+        throw new Error('Only assistant messages can be retried.');
+      }
+      if (!['failed', 'cancelled', 'interrupted'].includes(sourceMessage.status)) {
+        throw new Error('Only failed, cancelled, or interrupted assistant messages can be retried.');
+      }
+      if (this.activeRunBySessionId.has(sourceMessage.sessionId)) {
+        throw new Error('This session already has a running prompt.');
+      }
 
-    const session = this.options.sessions.getById(sourceMessage.sessionId);
-    if (!session.workspaceId) {
-      throw new Error('Cannot retry a message without a workspace.');
-    }
+      const session = this.options.sessions.getById(sourceMessage.sessionId);
+      if (!session.workspaceId) {
+        throw new Error('Cannot retry a message without a workspace.');
+      }
 
-    const messages = this.options.messages.list(sourceMessage.sessionId);
-    const sourceIndex = messages.findIndex((message) => message.id === sourceMessage.id);
-    const promptMessage = sourceIndex > 0
-      ? [...messages.slice(0, sourceIndex)].reverse().find((message) => message.role === 'user')
-      : undefined;
-    const prompt = promptMessage?.content.trim();
-    if (!prompt || !promptMessage) {
-      throw new Error('Cannot retry: no previous user message was found.');
-    }
+      const messages = this.options.messages.list(sourceMessage.sessionId);
+      const sourceIndex = messages.findIndex((message) => message.id === sourceMessage.id);
+      const promptMessage = sourceIndex > 0
+        ? [...messages.slice(0, sourceIndex)].reverse().find((message) => message.role === 'user')
+        : undefined;
+      const prompt = promptMessage?.content.trim();
+      if (!prompt || !promptMessage) {
+        throw new Error('Cannot retry: no previous user message was found.');
+      }
 
-    const workspace = this.options.workspaces.get(session.accountId, session.workspaceId);
-    return this.startAssistantRun({
-      accountId: session.accountId,
-      workspaceId: workspace.id,
-      sessionId: session.id,
-      session,
-      workspacePath: workspace.rootPath,
-      prompt,
-      runMode: this.runtimeManager.resolveRuntime().config.protocol,
-      promptMessageId: promptMessage.id,
-      promptMessageCreatedAt: promptMessage.createdAt,
-      retrySourceMessageId: sourceMessage.id,
-    });
+      const workspace = this.options.workspaces.get(session.accountId, session.workspaceId);
+      return this.startAssistantRun({
+        accountId: session.accountId,
+        workspaceId: workspace.id,
+        sessionId: session.id,
+        session,
+        workspacePath: workspace.rootPath,
+        prompt,
+        runMode: this.runtimeManager.resolveRuntime().config.protocol,
+        promptMessageId: promptMessage.id,
+        promptMessageCreatedAt: promptMessage.createdAt,
+        retrySourceMessageId: sourceMessage.id,
+      });
+    } finally {
+      this.retryingMessageIds.delete(messageId);
+    }
   }
 
   private async startAssistantRun(input: {
@@ -302,6 +355,7 @@ export class HarnessService {
       buffer: '',
       flushedLength: 0,
       lastFlushedAt: now,
+      lastActivityAt: now,
       status: 'running',
       startedAt: now,
       terminal: false,
@@ -357,12 +411,21 @@ export class HarnessService {
       return;
     }
 
-    if (!run.capabilities.cancelCurrentRun) {
-      throw new Error('Current run mode does not support per-session Stop. Use Terminate Runtime for SDK runs.');
+    if (!run.capabilities.cancelCurrentRun && !run.capabilities.terminateRuntime) {
+      throw new Error('Current run mode does not support Stop.');
     }
 
     run.status = 'cancelling';
     this.activeRunBySessionId.set(sessionId, { ...ref, status: 'cancelling' });
+    if (!run.capabilities.cancelCurrentRun && run.capabilities.terminateRuntime) {
+      this.finishRun(run, 'run.interrupted', {
+        code: 'runtime_terminated',
+        message: 'Run was stopped by terminating the DSH runtime.',
+      });
+      await this.terminateRunRuntime(run);
+      return;
+    }
+
     try {
       await this.harness.interrupt(ref.harnessSessionId);
     } finally {
@@ -380,12 +443,14 @@ export class HarnessService {
     await this.harness.approve(ref.harnessSessionId, input);
     if (run && run.status === 'waiting_approval') {
       run.status = 'running';
+      this.markRunActivity(run);
       this.activeRunBySessionId.set(sessionId, { ...ref, status: 'running' });
     }
   }
 
   async dispose(): Promise<void> {
     this.log('main', 'disposing HarnessService');
+    clearInterval(this.runWatchdog);
     await this.harness.dispose();
   }
 
@@ -556,6 +621,7 @@ export class HarnessService {
       return;
     }
 
+    this.markRunActivity(run);
     // this.log('dsh', `event: ${event.type}`, summarizeHarnessEvent(event));
 
     if (event.type === 'assistant.delta') {
@@ -626,12 +692,49 @@ export class HarnessService {
 
     if (event.type === 'run.failed') {
       this.finishRun(run, run.status === 'cancelling' ? 'run.cancelled' : 'run.failed', event.error);
+      if (run.runMode === 'sdk' && isSdkFatalRunError(event.error.code)) {
+        void this.terminateRunRuntime(run);
+      }
       return;
     }
 
     if (event.type === 'run.interrupted') {
       this.finishRun(run, 'run.interrupted', event.error);
+      if (run.runMode === 'sdk') {
+        void this.invalidateHarnessSession(run);
+      }
     }
+  }
+
+  private checkRunWatchdog(): void {
+    const now = Date.now();
+    for (const run of this.activeRuns.values()) {
+      if (run.runMode !== 'sdk' || run.status !== 'running' || run.terminal) {
+        continue;
+      }
+
+      const inactiveFor = now - run.lastActivityAt;
+      if (inactiveFor < this.runInactivityTimeoutMs) {
+        continue;
+      }
+
+      this.log('harness', 'SDK run inactivity timeout', {
+        sessionId: run.robbotSessionId,
+        harnessSessionId: run.harnessSessionId,
+        runId: run.runId,
+        inactiveFor,
+        timeoutMs: this.runInactivityTimeoutMs,
+      });
+      this.finishRun(run, 'run.failed', {
+        code: 'run_timeout',
+        message: `Run produced no activity for ${this.runInactivityTimeoutMs}ms.`,
+      });
+      void this.terminateRunRuntime(run);
+    }
+  }
+
+  private markRunActivity(run: ActiveRun): void {
+    run.lastActivityAt = Date.now();
   }
 
   private flushRunIfNeeded(run: ActiveRun): void {
@@ -670,8 +773,8 @@ export class HarnessService {
       return;
     }
 
-    run.terminal = true;
     this.flushRun(run);
+    run.terminal = true;
     const status = type === 'run.completed'
       ? 'completed'
       : type === 'run.cancelled'
@@ -704,7 +807,28 @@ export class HarnessService {
   }
 
   private isRunCurrent(run: ActiveRun): boolean {
-    return run.accountRuntimeEpoch === this.currentAccountEpoch(run.accountId);
+    return !run.terminal
+      && this.activeRuns.get(run.runId) === run
+      && run.accountRuntimeEpoch === this.currentAccountEpoch(run.accountId);
+  }
+
+  private async terminateRunRuntime(run: ActiveRun): Promise<void> {
+    this.invalidateHarnessSession(run);
+    try {
+      await this.harness.terminate(run.harnessSessionId);
+    } catch (error) {
+      this.log('harness', 'failed to terminate DSH runtime after run end', {
+        sessionId: run.robbotSessionId,
+        harnessSessionId: run.harnessSessionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private invalidateHarnessSession(run: ActiveRun): void {
+    this.harnessRunModeBySessionId.delete(run.robbotSessionId);
+    this.harnessReuseIdentityBySessionId.delete(run.robbotSessionId);
+    this.options.sessions.detachHarnessSession(run.accountId, run.robbotSessionId);
   }
 
   private currentAccountEpoch(accountId: string): number {
@@ -809,6 +933,16 @@ function formatRunFailureMessage(run: ActiveRun, payload: unknown): string {
   const rawMessage = error.message || 'Unknown error.';
   const code = error.code || 'UNKNOWN';
 
+  if (code === 'run_timeout' || code === 'sdk_prompt_timeout' || code === 'sdk_request_timeout' || code === 'sdk_run_timeout') {
+    return [
+      `${provider} 请求超时或 DSH runtime 无响应。`,
+      '当前 runtime 已被终止；下一次发送会创建新的 Harness Session，并从本地历史恢复上下文。',
+      model,
+      `错误码：${code}`,
+      `原始错误：${rawMessage}`,
+    ].filter(Boolean).join('\n');
+  }
+
   if (code === 'TRANSPORT' || /connection error/i.test(rawMessage)) {
     return [
       `${provider} 请求失败：连接错误。`,
@@ -858,6 +992,13 @@ function asErrorPayload(value: unknown): { message: string; code?: string } {
     message: typeof record.message === 'string' ? record.message : String(record.message ?? 'Unknown error.'),
     code: typeof record.code === 'string' ? record.code : undefined,
   };
+}
+
+function isSdkFatalRunError(code: string | undefined): boolean {
+  return code === 'sdk_prompt_timeout'
+    || code === 'sdk_request_timeout'
+    || code === 'sdk_run_timeout'
+    || code === 'runtime_terminated';
 }
 
 function reuseIdentityEquals(left: HarnessReuseIdentity, right: HarnessReuseIdentity): boolean {

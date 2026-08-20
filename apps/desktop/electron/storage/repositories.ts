@@ -321,6 +321,24 @@ export class SessionRepository {
     return this.get(accountId, sessionId);
   }
 
+  detachHarnessSession(accountId: string, sessionId: string): SessionRecord {
+    this.db
+      .update(sessions)
+      .set({
+        harnessSessionId: null,
+        harnessInstanceId: null,
+        harnessAiProvider: null,
+        harnessAiModel: null,
+        harnessAiBaseUrl: null,
+        harnessAiConfigFingerprint: null,
+        updatedAt: Date.now(),
+      })
+      .where(and(eq(sessions.accountId, accountId), eq(sessions.id, sessionId), isNull(sessions.deletedAt)))
+      .run();
+
+    return this.get(accountId, sessionId);
+  }
+
   touchAfterMessage(accountId: string, sessionId: string, input: {
     lastMessageId: string;
     lastMessageAt: number;

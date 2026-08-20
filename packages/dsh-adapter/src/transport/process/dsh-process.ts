@@ -42,24 +42,31 @@ export class DshProcess {
     // Reading Robbot's .env here is intentionally retained only as a local-development
     // fallback for adapter-level runs that do not provide metadata.aiRuntime.
     const robbotEnv = readRobbotEnvFromDshRoot(this.cwd);
+    const launchEnv = {
+      ...process.env,
+      ROBBOT_OPENAI_PROVIDER: process.env.ROBBOT_OPENAI_PROVIDER ?? robbotEnv.ROBBOT_OPENAI_PROVIDER,
+      ROBBOT_OPENAI_MODEL: process.env.ROBBOT_OPENAI_MODEL ?? robbotEnv.ROBBOT_OPENAI_MODEL,
+      ROBBOT_DEEPSEEK_MODEL: process.env.ROBBOT_DEEPSEEK_MODEL ?? robbotEnv.ROBBOT_DEEPSEEK_MODEL,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? robbotEnv.OPENAI_API_KEY,
+      OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? robbotEnv.OPENAI_BASE_URL,
+      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? robbotEnv.DEEPSEEK_API_KEY ?? 'sk-dummy-for-boot',
+      DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL ?? robbotEnv.DEEPSEEK_BASE_URL,
+      DSH_MODEL: process.env.DSH_MODEL ?? robbotEnv.DSH_MODEL,
+      DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? 'workspace-write',
+      DSH_CORDIS_CONFIG: this.configPath,
+      TSX_TSCONFIG_PATH: path.join(this.cwd, 'tsconfig.json'),
+      ...this.envOverrides,
+    };
+    console.info('[robbot:dsh-process] launch env summary', summarizeLaunchEnv(launchEnv));
+
     this.child = spawn(nodeExecutable, args, {
       cwd: this.cwd,
       stdio: 'pipe',
-      env: {
-        ...process.env,
-        ROBBOT_OPENAI_PROVIDER: process.env.ROBBOT_OPENAI_PROVIDER ?? robbotEnv.ROBBOT_OPENAI_PROVIDER,
-        ROBBOT_OPENAI_MODEL: process.env.ROBBOT_OPENAI_MODEL ?? robbotEnv.ROBBOT_OPENAI_MODEL,
-        ROBBOT_DEEPSEEK_MODEL: process.env.ROBBOT_DEEPSEEK_MODEL ?? robbotEnv.ROBBOT_DEEPSEEK_MODEL,
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? robbotEnv.OPENAI_API_KEY,
-        OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? robbotEnv.OPENAI_BASE_URL,
-        DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? robbotEnv.DEEPSEEK_API_KEY ?? 'sk-dummy-for-boot',
-        DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL ?? robbotEnv.DEEPSEEK_BASE_URL,
-        DSH_MODEL: process.env.DSH_MODEL ?? robbotEnv.DSH_MODEL,
-        DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? 'workspace-write',
-        DSH_CORDIS_CONFIG: this.configPath,
-        TSX_TSCONFIG_PATH: path.join(this.cwd, 'tsconfig.json'),
-        ...this.envOverrides,
-      },
+      env: launchEnv,
+    });
+    console.info('[robbot:dsh-process] DSH process spawned', {
+      protocol: this.protocol,
+      pid: this.child.pid,
     });
 
     this.child.once('error', (error: Error) => {
@@ -93,11 +100,54 @@ export class DshProcess {
       return;
     }
 
-    console.info('[robbot:dsh-process] stopping DSH process', { protocol: this.protocol });
-    this.child.kill('SIGTERM');
+    const child = this.child;
+    const startedAt = Date.now();
+    console.info('[robbot:dsh-process] stopping DSH process', { protocol: this.protocol, pid: child.pid });
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(killTimer);
+        resolve();
+      };
+      const killTimer = setTimeout(() => {
+        console.warn('[robbot:dsh-process] DSH process did not exit after SIGTERM; sending SIGKILL', {
+          protocol: this.protocol,
+          pid: child.pid,
+        });
+        child.kill('SIGKILL');
+      }, 5_000);
+
+      child.once('exit', finish);
+      child.kill('SIGTERM');
+    });
+    console.info('[robbot:dsh-process] stopped DSH process', {
+      protocol: this.protocol,
+      pid: child.pid,
+      elapsedMs: Date.now() - startedAt,
+    });
     this.child = undefined;
     this.channel = undefined;
   }
+}
+
+function summarizeLaunchEnv(env: Record<string, string | undefined>): Record<string, unknown> {
+  return {
+    provider: env.ROBBOT_OPENAI_PROVIDER,
+    openaiModel: env.ROBBOT_OPENAI_MODEL,
+    deepseekModel: env.ROBBOT_DEEPSEEK_MODEL,
+    dshModel: env.DSH_MODEL,
+    permissionMode: env.DSH_PERMISSION_MODE,
+    configPath: env.DSH_CORDIS_CONFIG,
+    hasOpenaiApiKey: Boolean(env.OPENAI_API_KEY),
+    hasOpenaiBaseUrl: Boolean(env.OPENAI_BASE_URL),
+    hasDeepseekApiKey: Boolean(env.DEEPSEEK_API_KEY),
+    hasDeepseekBaseUrl: Boolean(env.DEEPSEEK_BASE_URL),
+    hasTsxTsconfigPath: Boolean(env.TSX_TSCONFIG_PATH),
+  };
 }
 
 export function readRobbotEnvValueFromDshRoot(dshRoot: string, name: string): string | undefined {

@@ -5,8 +5,10 @@ export type DshRunMode = HarnessRunMode;
 export interface HarnessTransport {
   readonly mode: DshRunMode;
   capabilities(): HarnessCapabilities;
+  warmup(input: CreateSessionInput): Promise<void>;
   createSession(input: CreateSessionInput): Promise<HarnessSession>;
   run(sessionId: string, input: RunInput): AsyncIterable<HarnessEvent>;
   cancel(sessionId: string): Promise<void>;
+  terminate(sessionId: string): Promise<void>;
   approve(sessionId: string, input: ApprovalInput): Promise<void>;
 }

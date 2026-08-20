@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import type { RuntimeServices } from '../runtime';
 import type { AccountStatus } from '../storage/repositories';
-import type { HarnessRunInput } from '../main/harness/harness-service';
+import type { HarnessRunInput, HarnessWarmupInput } from '../main/harness/harness-service';
 
 export interface UpsertAccountInput {
   id: string;
@@ -94,6 +94,7 @@ export function registerIpcHandlers(services: RuntimeServices): void {
 
   ipcMain.handle('harness:get-status', () => services.harness.getStatus());
   ipcMain.handle('harness:list-active-runs', () => services.harness.getActiveRuns());
+  ipcMain.handle('harness:warmup-runtime', (_event, input: HarnessWarmupInput) => services.harness.warmup(input));
   ipcMain.handle('harness:run-prompt', (_event, input: HarnessRunInput) => services.harness.runPrompt(input));
   ipcMain.handle('harness:retry-message', (_event, messageId: string) => services.harness.retryMessage(messageId));
   ipcMain.handle('harness:cancel', (_event, sessionId: string) => services.harness.cancel(sessionId));

@@ -273,6 +273,7 @@ function parseStartedRun(event: HarnessEvent): ActiveRunRef | null {
     streaming: 'none' as const,
     toolEvents: false,
     cancelCurrentRun: false,
+    terminateRuntime: false,
     approval: false,
     sessionResume: false,
   }
@@ -515,6 +516,7 @@ function isCapabilities(value: unknown): value is ActiveRunRef['capabilities'] {
   return (value.streaming === 'none' || value.streaming === 'committed-message' || value.streaming === 'runtime-events')
     && typeof value.toolEvents === 'boolean'
     && typeof value.cancelCurrentRun === 'boolean'
+    && typeof value.terminateRuntime === 'boolean'
     && typeof value.approval === 'boolean'
     && typeof value.sessionResume === 'boolean'
 }

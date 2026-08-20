@@ -22,7 +22,9 @@ export function useChatRuntime(input: {
 }) {
   const { accountId, workspace, session, onStatusRefresh, onSessionsRefresh, onError } = input
   const [prompt, setPrompt] = useState('')
+  const [pendingRetryMessageId, setPendingRetryMessageId] = useState<string | null>(null)
   const terminalReloadedRef = useRef<Record<string, string>>({})
+  const pendingRetryMessageIdRef = useRef<string | null>(null)
   const messages = useSessionMessages(session?.id ?? null)
   const activeRun = useActiveRun(session?.id ?? null)
   const approval = useApproval(session?.id ?? null)
@@ -93,10 +95,12 @@ export function useChatRuntime(input: {
   }, [accountId, activeRun, loadMessages, onError, onSessionsRefresh, onStatusRefresh, prompt, refreshActiveRuns, session, workspace])
 
   const retry = useCallback(async (message: MessageRecord) => {
-    if (!workspace || !session || activeRun) {
+    if (!workspace || !session || activeRun || pendingRetryMessageIdRef.current) {
       return
     }
 
+    pendingRetryMessageIdRef.current = message.id
+    setPendingRetryMessageId(message.id)
     onError('')
     try {
       await window.robbot.harness.retryMessage(message.id)
@@ -108,6 +112,9 @@ export function useChatRuntime(input: {
       ])
     } catch (cause) {
       onError(errorMessage(cause))
+    } finally {
+      pendingRetryMessageIdRef.current = null
+      setPendingRetryMessageId(null)
     }
   }, [
     activeRun,
@@ -144,6 +151,7 @@ export function useChatRuntime(input: {
     messages,
     activeRun,
     approval,
+    pendingRetryMessageId,
     send,
     retry,
     cancel,

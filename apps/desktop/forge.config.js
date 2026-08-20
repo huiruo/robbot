@@ -120,11 +120,30 @@ function materializeRuntimeDependencies() {
   }
 }
 
+function prepareElectronWinstallerVendor() {
+  const vendorPath = path.join(resolvePackageDir('electron-winstaller'), 'vendor');
+  const arch = process.arch;
+
+  for (const extension of ['exe', 'dll']) {
+    const sourcePath = path.join(vendorPath, `7z-${arch}.${extension}`);
+    const targetPath = path.join(vendorPath, `7z.${extension}`);
+
+    if (fsSync.existsSync(sourcePath)) {
+      fsSync.copyFileSync(sourcePath, targetPath);
+    }
+  }
+}
+
 module.exports = {
   hooks: {
     async prePackage() {
       materializeRuntimeDependencies();
       materializePackage('electron');
+    },
+    async preMake() {
+      if (process.platform === 'win32') {
+        prepareElectronWinstallerVendor();
+      }
     },
   },
   packagerConfig: {

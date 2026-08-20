@@ -68,24 +68,80 @@ jobs:
           const fs = require('node:fs');
           const path = require('node:path');
 
+          function packagePathParts(packageName) {
+            return packageName.split('/');
+          }
+
+          function packageDirExists(packageDir) {
+            return fs.existsSync(path.join(packageDir, 'package.json'));
+          }
+
+          function findPnpmPackageDir(packageName, rootDir) {
+            const virtualStore = path.join(rootDir, 'node_modules', '.pnpm');
+
+            if (!fs.existsSync(virtualStore)) {
+              return undefined;
+            }
+
+            const packageSuffix = path.join('node_modules', ...packagePathParts(packageName));
+
+            for (const entry of fs.readdirSync(virtualStore)) {
+              const packageDir = path.join(virtualStore, entry, packageSuffix);
+
+              if (packageDirExists(packageDir)) {
+                return packageDir;
+              }
+            }
+
+            return undefined;
+          }
+
+          function resolvePackageDir(packageName, searchPaths) {
+            for (const searchPath of searchPaths) {
+              const directPackageDir = path.join(searchPath, 'node_modules', ...packagePathParts(packageName));
+
+              if (packageDirExists(directPackageDir)) {
+                return directPackageDir;
+              }
+
+              const pnpmPackageDir = findPnpmPackageDir(packageName, searchPath);
+
+              if (pnpmPackageDir) {
+                return pnpmPackageDir;
+              }
+            }
+
+            let current = path.dirname(require.resolve(packageName, { paths: searchPaths }));
+
+            while (current !== path.dirname(current)) {
+              if (fs.existsSync(path.join(current, 'package.json'))) {
+                return current;
+              }
+              current = path.dirname(current);
+            }
+
+            throw new Error(`Could not locate package root for ${packageName}`);
+          }
+
           const appDir = path.resolve('apps/desktop');
           const appNodeModules = path.join(appDir, 'node_modules');
-          const packages = [
-            '@robbot/core',
-            '@robbot/dsh-adapter',
-            'better-sqlite3',
-            'drizzle-orm',
-            'electron-squirrel-startup',
-            'node-addon-api',
-          ];
+          const links = new Map([
+            ['@robbot/core', path.resolve('packages/core')],
+            ['@robbot/dsh-adapter', path.resolve('packages/dsh-adapter')],
+            ...[
+              'better-sqlite3',
+              'drizzle-orm',
+              'electron-squirrel-startup',
+              'node-addon-api',
+            ].map((packageName) => [
+              packageName,
+              resolvePackageDir(packageName, [appDir, process.cwd()]),
+            ]),
+          ]);
 
           fs.mkdirSync(appNodeModules, { recursive: true });
 
-          for (const packageName of packages) {
-            const packageJsonPath = require.resolve(`${packageName}/package.json`, {
-              paths: [appDir, process.cwd()],
-            });
-            const target = path.dirname(packageJsonPath);
+          for (const [packageName, target] of links) {
             const linkPath = path.join(appNodeModules, ...packageName.split('/'));
 
             fs.mkdirSync(path.dirname(linkPath), { recursive: true });

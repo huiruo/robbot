@@ -1,6 +1,6 @@
 import type { ApprovalInput, CreateSessionInput, HarnessEvent, HarnessSession, RunInput } from '@robbot/core';
 import { HarnessError } from '@robbot/core';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { mapSdkNotificationToHarnessEvents } from '../mapper/sdk-event-mapper.js';
 import type { DshRuntimeManager } from '../runtime/dsh-runtime-manager.js';
@@ -78,8 +78,10 @@ export class SdkTransport implements HarnessTransport {
   async createSession(input: CreateSessionInput): Promise<HarnessSession> {
     const id = randomUUID();
     const runtime = this.runtimeManager.resolveRuntime();
-    const route = resolveSdkRoute(runtime.root, runtime.config.provider, runtime.config.model);
-    const processKey = `workspace:${input.workspacePath}:provider:${route.provider}:model:${route.model}:base:${route.baseURL ?? ''}`;
+    const route = resolveSdkRoute(input.metadata, runtime.root, runtime.config.provider, runtime.config.model);
+    const processKey = route.accountId && route.fingerprint
+      ? `dsh:${route.accountId}:${route.fingerprint}:workspace:${hashForProcessKey(input.workspacePath)}`
+      : `workspace:${input.workspacePath}:provider:${route.provider}:model:${route.model}:base:${route.baseURL ?? ''}`;
     const channel = await this.ensureInitialized(processKey, input.workspacePath, route);
     this.sessions.set(id, {
       id,
@@ -196,6 +198,7 @@ export class SdkTransport implements HarnessTransport {
       DSH_CWD: workspacePath,
       DSH_MODEL: route.model,
       DSH_SESSION_ROOT: `${workspacePath}/.robbot/dsh-sessions`,
+      ...providerEnvOverrides(route),
     });
     const channel = processHandle.getChannel();
     this.channelByProcessKey.set(processKey, channel);
@@ -344,9 +347,29 @@ interface SdkRoute {
   provider: string;
   model: string;
   baseURL?: string;
+  apiKey?: string;
+  accountId?: string;
+  fingerprint?: string;
 }
 
-function resolveSdkRoute(dshRoot: string, fallbackProvider: string | undefined, fallbackModel: string | undefined): SdkRoute {
+function resolveSdkRoute(
+  metadata: Record<string, unknown> | undefined,
+  dshRoot: string,
+  fallbackProvider: string | undefined,
+  fallbackModel: string | undefined,
+): SdkRoute {
+  const aiRuntime = parseAiRuntime(metadata);
+  if (aiRuntime) {
+    return {
+      provider: aiRuntime.provider === 'deepseek' ? 'deepseek-official' : 'openai',
+      model: aiRuntime.model,
+      baseURL: aiRuntime.apiUrl,
+      apiKey: aiRuntime.key,
+      accountId: aiRuntime.accountId,
+      fingerprint: aiRuntime.fingerprint,
+    };
+  }
+
   const provider = normalizeProvider(envValue(dshRoot, 'ROBBOT_OPENAI_PROVIDER') ?? fallbackProvider ?? 'deepseek-official');
   const model = modelForProvider(dshRoot, provider, fallbackModel);
   const baseURL = provider === 'openai' ? envValue(dshRoot, 'OPENAI_BASE_URL') : envValue(dshRoot, 'DEEPSEEK_BASE_URL');
@@ -356,6 +379,60 @@ function resolveSdkRoute(dshRoot: string, fallbackProvider: string | undefined, 
 
 function envValue(dshRoot: string, name: string): string | undefined {
   return process.env[name] ?? readRobbotEnvValueFromDshRoot(dshRoot, name);
+}
+
+function parseAiRuntime(metadata: Record<string, unknown> | undefined): {
+  provider: 'deepseek' | 'openai';
+  key: string;
+  model: string;
+  apiUrl?: string;
+  fingerprint: string;
+  accountId?: string;
+} | undefined {
+  const aiRuntime = asRecord(metadata?.aiRuntime);
+  if (!aiRuntime) {
+    return undefined;
+  }
+
+  const provider = aiRuntime.provider;
+  const key = stringValue(aiRuntime.key);
+  const model = stringValue(aiRuntime.model);
+  const apiUrl = stringValue(aiRuntime.apiUrl);
+  const fingerprint = stringValue(aiRuntime.fingerprint);
+  const accountId = stringValue(metadata?.accountId);
+  if ((provider !== 'deepseek' && provider !== 'openai') || !key || !model || !fingerprint) {
+    throw new HarnessError('Invalid aiRuntime metadata for DSH SDK transport.', 'protocol_error');
+  }
+
+  return {
+    provider,
+    key,
+    model,
+    apiUrl,
+    fingerprint,
+    accountId,
+  };
+}
+
+function providerEnvOverrides(route: SdkRoute): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (route.provider === 'openai' && route.apiKey) {
+    env.OPENAI_API_KEY = route.apiKey;
+    if (route.baseURL) {
+      env.OPENAI_BASE_URL = route.baseURL;
+    }
+  }
+  if (route.provider === 'deepseek-official' && route.apiKey) {
+    env.DEEPSEEK_API_KEY = route.apiKey;
+    if (route.baseURL) {
+      env.DEEPSEEK_BASE_URL = route.baseURL;
+    }
+  }
+  return env;
+}
+
+function hashForProcessKey(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
 function normalizeProvider(value: string): string {
@@ -398,6 +475,10 @@ function isInboxReceipt(event: Record<string, unknown> | undefined, messageId: s
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function turnEndReason(event: Record<string, unknown>): SdkTurnEndReason | undefined {

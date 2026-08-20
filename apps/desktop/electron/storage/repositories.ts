@@ -50,6 +50,10 @@ export interface SessionRecord {
   summary: string | null;
   harnessSessionId: string | null;
   harnessInstanceId: string | null;
+  harnessAiProvider: string | null;
+  harnessAiModel: string | null;
+  harnessAiBaseUrl: string | null;
+  harnessAiConfigFingerprint: string | null;
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
@@ -251,6 +255,10 @@ export class SessionRepository {
         summary: null,
         harnessSessionId: null,
         harnessInstanceId: null,
+        harnessAiProvider: null,
+        harnessAiModel: null,
+        harnessAiBaseUrl: null,
+        harnessAiConfigFingerprint: null,
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
@@ -291,12 +299,20 @@ export class SessionRepository {
   attachHarnessSession(accountId: string, sessionId: string, input: {
     harnessSessionId: string;
     harnessInstanceId: string;
+    harnessAiProvider: string | null;
+    harnessAiModel: string | null;
+    harnessAiBaseUrl: string | null;
+    harnessAiConfigFingerprint: string | null;
   }): SessionRecord {
     this.db
       .update(sessions)
       .set({
         harnessSessionId: input.harnessSessionId,
         harnessInstanceId: input.harnessInstanceId,
+        harnessAiProvider: input.harnessAiProvider,
+        harnessAiModel: input.harnessAiModel,
+        harnessAiBaseUrl: input.harnessAiBaseUrl,
+        harnessAiConfigFingerprint: input.harnessAiConfigFingerprint,
         updatedAt: Date.now(),
       })
       .where(and(eq(sessions.accountId, accountId), eq(sessions.id, sessionId), isNull(sessions.deletedAt)))

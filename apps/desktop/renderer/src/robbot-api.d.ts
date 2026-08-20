@@ -112,6 +112,10 @@ export interface SessionRecord {
   summary: string | null;
   harnessSessionId: string | null;
   harnessInstanceId: string | null;
+  harnessAiProvider: string | null;
+  harnessAiModel: string | null;
+  harnessAiBaseUrl: string | null;
+  harnessAiConfigFingerprint: string | null;
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
@@ -171,6 +175,7 @@ export interface RobbotApi {
     get: (accountId: string) => Promise<AccountRecord>;
     updateAiConfig: (accountId: string, field: 'deepseek' | 'openai', value: unknown) => Promise<AccountRecord>;
     selectAi: (accountId: string, selectedAi: 'deepseek' | 'openai' | null) => Promise<AccountRecord>;
+    resetHarness: (accountId: string) => Promise<void>;
   };
   workspace: {
     list: (accountId: string) => Promise<WorkspaceRecord[]>;

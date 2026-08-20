@@ -104,6 +104,15 @@ const MIGRATIONS: Migration[] = [
       UPDATE accounts SET selected_ai = 'openai' WHERE selected_ai = 'chatgptKey';
     `,
   },
+  {
+    id: '0007_session_harness_ai_snapshot',
+    sql: `
+      ALTER TABLE sessions ADD COLUMN harness_ai_provider TEXT;
+      ALTER TABLE sessions ADD COLUMN harness_ai_model TEXT;
+      ALTER TABLE sessions ADD COLUMN harness_ai_base_url TEXT;
+      ALTER TABLE sessions ADD COLUMN harness_ai_config_fingerprint TEXT;
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

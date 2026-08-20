@@ -38,6 +38,9 @@ export class DshProcess {
       args,
     });
 
+    // Product runtime config is passed by Electron Main through envOverrides.
+    // Reading Robbot's .env here is intentionally retained only as a local-development
+    // fallback for adapter-level runs that do not provide metadata.aiRuntime.
     const robbotEnv = readRobbotEnvFromDshRoot(this.cwd);
     this.child = spawn(nodeExecutable, args, {
       cwd: this.cwd,
@@ -150,6 +153,8 @@ function isElectronRuntime(): boolean {
 }
 
 function readRobbotEnvFromDshRoot(dshRoot: string): Record<string, string> {
+  // Local-development fallback only. Do not treat .env as the product runtime
+  // source of truth when Electron/SQLite account AI config is available.
   const envPath = path.resolve(dshRoot, '../..', '.env');
   let contents: string;
   try {

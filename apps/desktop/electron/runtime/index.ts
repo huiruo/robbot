@@ -18,7 +18,7 @@ export function initializeRuntime(): RuntimeServices {
   const workspaces = new WorkspaceRepository(database.db);
   const sessions = new SessionRepository(database.db);
   const messages = new MessageRepository(database.db);
-  const harness = new HarnessService({ sessions, workspaces, messages });
+  const harness = new HarnessService({ accounts, sessions, workspaces, messages });
   let disposed = false;
   const runtime: RuntimeServices = {
     database,

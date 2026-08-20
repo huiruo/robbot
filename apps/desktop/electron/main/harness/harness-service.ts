@@ -1,8 +1,8 @@
 import { DshLocalHarness, DshRuntimeManager, type DshRuntimeStatus } from '@robbot/dsh-adapter';
 import type { ApprovalInput, HarnessCapabilities, HarnessEvent, HarnessRunMode } from '@robbot/core';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
-import type { MessageRepository, SessionRepository, WorkspaceRepository } from '../../storage/repositories';
+import type { AccountRecord, AccountRepository, MessageRepository, SessionRepository, WorkspaceRepository } from '../../storage/repositories';
 
 export interface HarnessRuntimeStatus {
   status: DshRuntimeStatus;
@@ -41,9 +41,11 @@ export interface ActiveRun {
   runId: string;
   runMode: HarnessRunMode;
   accountId: string;
+  accountRuntimeEpoch: number;
   robbotSessionId: string;
   harnessSessionId: string;
   assistantMessageId: string;
+  aiRuntime: AiRuntimeSnapshot | null;
   capabilities: HarnessCapabilities;
   buffer: string;
   flushedLength: number;
@@ -83,9 +85,25 @@ export interface HarnessUiEvent {
 }
 
 export interface HarnessServiceOptions {
+  accounts: AccountRepository;
   sessions: SessionRepository;
   workspaces: WorkspaceRepository;
   messages: MessageRepository;
+}
+
+export interface AiRuntimeSnapshot {
+  provider: 'deepseek' | 'openai';
+  key: string;
+  model: string;
+  apiUrl?: string;
+  fingerprint: string;
+}
+
+interface HarnessReuseIdentity {
+  accountId: string;
+  harnessInstanceId: string;
+  runMode: HarnessRunMode;
+  aiConfigFingerprint: string | null;
 }
 
 export class HarnessService {
@@ -95,6 +113,8 @@ export class HarnessService {
   private readonly activeRuns = new Map<string, ActiveRun>();
   private readonly activeRunBySessionId = new Map<string, ActiveRunRef>();
   private readonly harnessRunModeBySessionId = new Map<string, HarnessRunMode>();
+  private readonly harnessReuseIdentityBySessionId = new Map<string, HarnessReuseIdentity>();
+  private readonly accountRuntimeEpoch = new Map<string, number>();
   private logSink?: HarnessLogSink;
   private eventSink?: HarnessEventSink;
 
@@ -223,7 +243,7 @@ export class HarnessService {
     accountId: string;
     workspaceId: string;
     sessionId: string;
-    session: { harnessSessionId: string | null; harnessInstanceId: string | null };
+    session: { harnessSessionId: string | null; harnessInstanceId: string | null; harnessAiConfigFingerprint: string | null };
     workspacePath: string;
     prompt: string;
     runMode: HarnessRunMode;
@@ -231,8 +251,10 @@ export class HarnessService {
     retrySourceMessageId?: string;
   }): Promise<HarnessRunStartResult> {
     const runMode = normalizeRunMode(input.runMode, this.runtimeManager.resolveRuntime().config.protocol);
+    const aiRuntime = resolveAiRuntimeSnapshot(this.options.accounts.get(input.accountId));
+    const accountRuntimeEpoch = this.currentAccountEpoch(input.accountId);
     const capabilities = this.harness.capabilities(runMode);
-    const harnessSessionId = await this.resolveHarnessSession(input.accountId, input.sessionId, input.session, input.workspacePath, runMode);
+    const harnessSessionId = await this.resolveHarnessSession(input.accountId, input.sessionId, input.session, input.workspacePath, runMode, aiRuntime);
     const assistantMessage = this.options.messages.create({
       sessionId: input.sessionId,
       role: 'assistant',
@@ -247,9 +269,11 @@ export class HarnessService {
       runId,
       runMode,
       accountId: input.accountId,
+      accountRuntimeEpoch,
       robbotSessionId: input.sessionId,
       harnessSessionId,
       assistantMessageId: assistantMessage.id,
+      aiRuntime,
       capabilities,
       buffer: '',
       flushedLength: 0,
@@ -280,6 +304,9 @@ export class HarnessService {
         retrySourceMessageId: input.retrySourceMessageId,
         runMode,
         capabilities,
+        aiProvider: aiRuntime?.provider,
+        aiModel: aiRuntime?.model,
+        aiConfigFingerprint: aiRuntime?.fingerprint,
       },
     });
 
@@ -337,6 +364,33 @@ export class HarnessService {
     await this.harness.dispose();
   }
 
+  async resetForAccount(accountId: string): Promise<void> {
+    this.log('main', 'resetting harness for account', { accountId });
+    const accountRuns = [...this.activeRuns.values()].filter((run) => run.accountId === accountId);
+    for (const run of accountRuns) {
+      this.finishRun(run, 'run.interrupted', {
+        code: 'account_logout',
+        message: 'Account signed out; runtime was reset.',
+      });
+    }
+
+    this.accountRuntimeEpoch.set(accountId, this.currentAccountEpoch(accountId) + 1);
+    for (const [sessionId, ref] of [...this.activeRunBySessionId.entries()]) {
+      const run = this.activeRuns.get(ref.runId);
+      if (!run || run.accountId === accountId) {
+        this.activeRunBySessionId.delete(sessionId);
+      }
+    }
+    for (const [sessionId, identity] of [...this.harnessReuseIdentityBySessionId.entries()]) {
+      if (identity.accountId === accountId) {
+        this.harnessReuseIdentityBySessionId.delete(sessionId);
+        this.harnessRunModeBySessionId.delete(sessionId);
+      }
+    }
+
+    await this.runtimeManager.stopAll();
+  }
+
   private log(source: HarnessLogEntry['source'], message: string, data?: Record<string, unknown>): void {
     const entry: HarnessLogEntry = {
       at: new Date().toISOString(),
@@ -352,33 +406,64 @@ export class HarnessService {
   private async resolveHarnessSession(
     accountId: string,
     sessionId: string,
-    session: { harnessSessionId: string | null; harnessInstanceId: string | null },
+    session: { harnessSessionId: string | null; harnessInstanceId: string | null; harnessAiConfigFingerprint: string | null },
     workspacePath: string,
     runMode: HarnessRunMode,
+    aiRuntime: AiRuntimeSnapshot | null,
   ): Promise<string> {
-    if (
+    const reuseIdentity: HarnessReuseIdentity = {
+      accountId,
+      harnessInstanceId: this.harnessInstanceId,
+      runMode,
+      aiConfigFingerprint: aiRuntime?.fingerprint ?? null,
+    };
+    const previousIdentity = this.harnessReuseIdentityBySessionId.get(sessionId);
+    const persistedIdentityMatches = Boolean(
       session.harnessSessionId
       && session.harnessInstanceId === this.harnessInstanceId
+      && session.harnessAiConfigFingerprint === reuseIdentity.aiConfigFingerprint
       && this.harnessRunModeBySessionId.get(sessionId) === runMode
-    ) {
-      return session.harnessSessionId;
+      && (!previousIdentity || reuseIdentityEquals(previousIdentity, reuseIdentity)),
+    );
+    if (persistedIdentityMatches) {
+      return session.harnessSessionId!;
     }
 
-    this.log('harness', 'creating DSH session', { sessionId, workspacePath, runMode });
+    this.log('harness', 'creating DSH session', {
+      sessionId,
+      workspacePath,
+      runMode,
+      aiProvider: aiRuntime?.provider,
+      aiModel: aiRuntime?.model,
+      aiConfigFingerprint: aiRuntime?.fingerprint,
+    });
     const harnessSession = await this.harness.createSession({
       workspacePath,
-      metadata: { robbotSessionId: sessionId, runMode },
+      metadata: {
+        robbotSessionId: sessionId,
+        accountId,
+        runMode,
+        aiRuntime,
+      },
     });
     this.options.sessions.attachHarnessSession(accountId, sessionId, {
       harnessSessionId: harnessSession.id,
       harnessInstanceId: this.harnessInstanceId,
+      harnessAiProvider: aiRuntime?.provider ?? null,
+      harnessAiModel: aiRuntime?.model ?? null,
+      harnessAiBaseUrl: aiRuntime?.apiUrl ?? null,
+      harnessAiConfigFingerprint: aiRuntime?.fingerprint ?? null,
     });
     this.harnessRunModeBySessionId.set(sessionId, runMode);
+    this.harnessReuseIdentityBySessionId.set(sessionId, reuseIdentity);
     this.log('harness', 'DSH session created', {
       sessionId,
       harnessSessionId: harnessSession.id,
       harnessInstanceId: this.harnessInstanceId,
       runMode,
+      aiProvider: aiRuntime?.provider,
+      aiModel: aiRuntime?.model,
+      aiConfigFingerprint: aiRuntime?.fingerprint,
     });
     return harnessSession.id;
   }
@@ -389,12 +474,18 @@ export class HarnessService {
         sessionId: run.robbotSessionId,
         harnessSessionId: run.harnessSessionId,
         runMode: run.runMode,
+        aiProvider: run.aiRuntime?.provider,
+        aiModel: run.aiRuntime?.model,
+        aiConfigFingerprint: run.aiRuntime?.fingerprint,
       });
 
       for await (const event of this.harness.run(run.harnessSessionId, { prompt, metadata: { runMode: run.runMode } })) {
         this.handleHarnessEvent(run, event);
       }
     } catch (error) {
+      if (!this.isRunCurrent(run)) {
+        return;
+      }
       this.finishRun(run, 'run.failed', {
         message: error instanceof Error ? error.message : String(error),
         code: 'run_error',
@@ -403,7 +494,11 @@ export class HarnessService {
   }
 
   private handleHarnessEvent(run: ActiveRun, event: HarnessEvent): void {
-    this.log('dsh', `event: ${event.type}`, summarizeHarnessEvent(event));
+    if (!this.isRunCurrent(run)) {
+      return;
+    }
+
+    // this.log('dsh', `event: ${event.type}`, summarizeHarnessEvent(event));
 
     if (event.type === 'assistant.delta') {
       run.buffer += event.text;
@@ -482,6 +577,10 @@ export class HarnessService {
   }
 
   private flushRunIfNeeded(run: ActiveRun): void {
+    if (!this.isRunCurrent(run)) {
+      return;
+    }
+
     const now = Date.now();
     const shouldFlush = now - run.lastFlushedAt >= 500 || run.buffer.length - run.flushedLength >= 1024;
     if (!shouldFlush) {
@@ -492,6 +591,10 @@ export class HarnessService {
   }
 
   private flushRun(run: ActiveRun): void {
+    if (!this.isRunCurrent(run)) {
+      return;
+    }
+
     if (run.flushedLength === run.buffer.length) {
       return;
     }
@@ -505,6 +608,9 @@ export class HarnessService {
     if (run.terminal) {
       return;
     }
+    if (!this.isRunCurrent(run)) {
+      return;
+    }
 
     run.terminal = true;
     this.flushRun(run);
@@ -515,10 +621,11 @@ export class HarnessService {
         : type === 'run.interrupted'
           ? 'interrupted'
           : 'failed';
+    const finalContent = finalAssistantContent(run, type, payload);
     const message =
       type === 'run.cancelled'
-        ? this.options.messages.updateStreamingStatus(run.assistantMessageId, status, run.buffer)
-        : this.options.messages.updateStatus(run.assistantMessageId, status, run.buffer);
+        ? this.options.messages.updateStreamingStatus(run.assistantMessageId, status, finalContent)
+        : this.options.messages.updateStatus(run.assistantMessageId, status, finalContent);
 
     this.options.sessions.touchAfterMessage(run.accountId, run.robbotSessionId, {
       lastMessageId: run.assistantMessageId,
@@ -536,6 +643,14 @@ export class HarnessService {
 
     this.activeRuns.delete(run.runId);
     this.activeRunBySessionId.delete(run.robbotSessionId);
+  }
+
+  private isRunCurrent(run: ActiveRun): boolean {
+    return run.accountRuntimeEpoch === this.currentAccountEpoch(run.accountId);
+  }
+
+  private currentAccountEpoch(accountId: string): number {
+    return this.accountRuntimeEpoch.get(accountId) ?? 0;
   }
 
   private emitEvent(event: HarnessUiEvent): void {
@@ -577,4 +692,169 @@ function summarizeHarnessEvent(event: HarnessEvent): Record<string, unknown> {
 
 function normalizeRunMode(value: unknown, fallback: HarnessRunMode): HarnessRunMode {
   return value === 'acp' || value === 'sdk' ? value : fallback;
+}
+
+function finalAssistantContent(
+  run: ActiveRun,
+  type: 'run.completed' | 'run.failed' | 'run.cancelled' | 'run.interrupted',
+  payload: unknown,
+): string {
+  if (type === 'run.completed' || type === 'run.cancelled') {
+    return run.buffer;
+  }
+
+  const existing = run.buffer.trim();
+  if (existing) {
+    return run.buffer;
+  }
+
+  if (type === 'run.interrupted') {
+    return '任务已中断。';
+  }
+
+  return formatRunFailureMessage(run, payload);
+}
+
+function formatRunFailureMessage(run: ActiveRun, payload: unknown): string {
+  const error = asErrorPayload(payload);
+  const provider = run.aiRuntime?.provider === 'openai'
+    ? 'OpenAI-compatible'
+    : run.aiRuntime?.provider === 'deepseek'
+      ? 'DeepSeek'
+      : 'AI provider';
+  const model = run.aiRuntime?.model ? `\n模型：${run.aiRuntime.model}` : '';
+  const rawMessage = error.message || 'Unknown error.';
+  const code = error.code || 'UNKNOWN';
+
+  if (code === 'TRANSPORT' || /connection error/i.test(rawMessage)) {
+    return [
+      `${provider} 请求失败：连接错误。`,
+      '请检查 API key、apiUrl/baseURL 是否正确，以及当前网络是否能访问该模型服务。',
+      model,
+      `错误码：${code}`,
+      `原始错误：${rawMessage}`,
+    ].filter(Boolean).join('\n');
+  }
+
+  if (code === 'RATE_LIMIT' || /rate limit|429/i.test(rawMessage)) {
+    return [
+      `${provider} 请求失败：触发限流或额度限制。`,
+      '请稍后重试，或检查当前 key 的额度/速率限制。',
+      model,
+      `错误码：${code}`,
+      `原始错误：${rawMessage}`,
+    ].filter(Boolean).join('\n');
+  }
+
+  if (/unauthorized|invalid api key|401|403/i.test(rawMessage) || code === 'UNAUTHORIZED' || code === 'AUTHENTICATION') {
+    return [
+      `${provider} 请求失败：认证失败。`,
+      '请检查 Settings 里的 API key 是否正确，并确认该 key 有权限访问当前模型。',
+      model,
+      `错误码：${code}`,
+      `原始错误：${rawMessage}`,
+    ].filter(Boolean).join('\n');
+  }
+
+  return [
+    `${provider} 请求失败。`,
+    '请检查 Settings 里的 provider、model、key 和 apiUrl/baseURL 配置。',
+    model,
+    `错误码：${code}`,
+    `原始错误：${rawMessage}`,
+  ].filter(Boolean).join('\n');
+}
+
+function asErrorPayload(value: unknown): { message: string; code?: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { message: value === undefined ? 'Unknown error.' : String(value) };
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    message: typeof record.message === 'string' ? record.message : String(record.message ?? 'Unknown error.'),
+    code: typeof record.code === 'string' ? record.code : undefined,
+  };
+}
+
+function reuseIdentityEquals(left: HarnessReuseIdentity, right: HarnessReuseIdentity): boolean {
+  return left.accountId === right.accountId
+    && left.harnessInstanceId === right.harnessInstanceId
+    && left.runMode === right.runMode
+    && left.aiConfigFingerprint === right.aiConfigFingerprint;
+}
+
+function resolveAiRuntimeSnapshot(account: AccountRecord): AiRuntimeSnapshot | null {
+  if (account.selectedAi !== 'deepseek' && account.selectedAi !== 'openai') {
+    return null;
+  }
+
+  const rawConfig = account.selectedAi === 'deepseek' ? account.deepseek : account.openai;
+  const config = parseSelectedAiConfig(account.selectedAi, rawConfig);
+  const snapshot: Omit<AiRuntimeSnapshot, 'fingerprint'> = {
+    provider: account.selectedAi,
+    key: config.key,
+    model: config.model,
+    apiUrl: config.apiUrl,
+  };
+  return {
+    ...snapshot,
+    fingerprint: fingerprintAiRuntime(snapshot),
+  };
+}
+
+function parseSelectedAiConfig(provider: 'deepseek' | 'openai', rawConfig: string | null): {
+  key: string;
+  model: string;
+  apiUrl?: string;
+} {
+  if (!rawConfig) {
+    throw new Error(`${provider} is selected, but its AI config is empty.`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawConfig);
+  } catch {
+    throw new Error(`${provider} AI config is not valid JSON.`);
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${provider} AI config must be a JSON object.`);
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const key = stringField(record, 'key');
+  const model = stringField(record, 'model');
+  const apiUrl = stringField(record, 'apiUrl');
+  if (!key) {
+    throw new Error(`${provider} AI config requires a non-empty key.`);
+  }
+  if (!model) {
+    throw new Error(`${provider} AI config requires a non-empty model.`);
+  }
+
+  return { key, model, apiUrl };
+}
+
+function stringField(record: Record<string, unknown>, field: string): string | undefined {
+  const value = record[field];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function fingerprintAiRuntime(input: {
+  provider: 'deepseek' | 'openai';
+  key: string;
+  model: string;
+  apiUrl?: string;
+}): string {
+  const keyHash = createHash('sha256').update(input.key).digest('hex');
+  return createHash('sha256')
+    .update(JSON.stringify({
+      provider: input.provider,
+      model: input.model,
+      apiUrl: input.apiUrl ?? '',
+      keyHash,
+    }))
+    .digest('hex');
 }

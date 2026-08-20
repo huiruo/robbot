@@ -46,6 +46,7 @@ export function registerIpcHandlers(services: RuntimeServices): void {
   ipcMain.handle('account:select-ai', (_event, accountId: string, selectedAi: 'deepseek' | 'openai' | null) =>
     services.accounts.selectAi(accountId, selectedAi),
   );
+  ipcMain.handle('account:reset-harness', (_event, accountId: string) => services.harness.resetForAccount(accountId));
 
   ipcMain.handle('workspace:list', (_event, accountId: string) => services.workspaces.list(accountId));
   ipcMain.handle('workspace:save', (_event, input: SaveWorkspaceInput) => services.workspaces.save(input));

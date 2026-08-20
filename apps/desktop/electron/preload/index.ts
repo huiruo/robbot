@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('robbot', {
       ipcRenderer.invoke('account:update-ai-config', accountId, field, value),
     selectAi: (accountId: string, selectedAi: 'deepseek' | 'openai' | null) =>
       ipcRenderer.invoke('account:select-ai', accountId, selectedAi),
+    resetHarness: (accountId: string) => ipcRenderer.invoke('account:reset-harness', accountId),
   },
   workspace: {
     list: (accountId: string) => ipcRenderer.invoke('workspace:list', accountId),

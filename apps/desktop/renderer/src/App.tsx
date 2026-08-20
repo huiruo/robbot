@@ -24,14 +24,15 @@ function App() {
   }, [])
 
   if (!userId) return <LoginPage onDone={setUserId} />
-  return <AuthenticatedApp accountId={userId} onLogout={() => {
+  return <AuthenticatedApp accountId={userId} onLogout={async () => {
     if (window.confirm('Are you sure you want to sign out?')) {
+      await window.robbot.account.resetHarness(userId)
       clearAuth()
     }
   }} />
 }
 
-function AuthenticatedApp({ accountId, onLogout }: { accountId: string; onLogout: () => void }) {
+function AuthenticatedApp({ accountId, onLogout }: { accountId: string; onLogout: () => void | Promise<void> }) {
   useHarnessEvents()
   const [account, setAccount] = useState<AccountRecord | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)

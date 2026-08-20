@@ -95,6 +95,15 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE accounts ADD COLUMN selected_ai TEXT;
     `,
   },
+  {
+    id: '0006_rename_account_ai_config_columns',
+    sql: `
+      ALTER TABLE accounts RENAME COLUMN deepseek_key TO deepseek;
+      ALTER TABLE accounts RENAME COLUMN chatgpt_key TO openai;
+      UPDATE accounts SET selected_ai = 'deepseek' WHERE selected_ai = 'deepseekKey';
+      UPDATE accounts SET selected_ai = 'openai' WHERE selected_ai = 'chatgptKey';
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

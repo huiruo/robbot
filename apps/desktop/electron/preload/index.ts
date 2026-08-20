@@ -12,9 +12,9 @@ contextBridge.exposeInMainWorld('robbot', {
   account: {
     upsertCurrent: (input: unknown) => ipcRenderer.invoke('account:upsert-current', input),
     get: (accountId: string) => ipcRenderer.invoke('account:get', accountId),
-    updateAiConfig: (accountId: string, field: 'deepseekKey' | 'chatgptKey', value: unknown) =>
+    updateAiConfig: (accountId: string, field: 'deepseek' | 'openai', value: unknown) =>
       ipcRenderer.invoke('account:update-ai-config', accountId, field, value),
-    selectAi: (accountId: string, selectedAi: 'deepseekKey' | 'chatgptKey' | null) =>
+    selectAi: (accountId: string, selectedAi: 'deepseek' | 'openai' | null) =>
       ipcRenderer.invoke('account:select-ai', accountId, selectedAi),
   },
   workspace: {

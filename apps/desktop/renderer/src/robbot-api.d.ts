@@ -83,8 +83,8 @@ export interface AccountRecord {
   updatedAt: number;
   lastLoginAt: number | null;
   metadataJson: string | null;
-  deepseekKey: string | null;
-  chatgptKey: string | null;
+  deepseek: string | null;
+  openai: string | null;
   selectedAi: string | null;
 }
 
@@ -169,8 +169,8 @@ export interface RobbotApi {
   account: {
     upsertCurrent: (input: UpsertAccountInput) => Promise<AccountRecord>;
     get: (accountId: string) => Promise<AccountRecord>;
-    updateAiConfig: (accountId: string, field: 'deepseekKey' | 'chatgptKey', value: unknown) => Promise<AccountRecord>;
-    selectAi: (accountId: string, selectedAi: 'deepseekKey' | 'chatgptKey' | null) => Promise<AccountRecord>;
+    updateAiConfig: (accountId: string, field: 'deepseek' | 'openai', value: unknown) => Promise<AccountRecord>;
+    selectAi: (accountId: string, selectedAi: 'deepseek' | 'openai' | null) => Promise<AccountRecord>;
   };
   workspace: {
     list: (accountId: string) => Promise<WorkspaceRecord[]>;

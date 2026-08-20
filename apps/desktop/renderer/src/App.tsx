@@ -105,8 +105,8 @@ function AuthenticatedApp({ accountId, onLogout }: { accountId: string; onLogout
         key={settingsOpen ? 'open' : 'closed'}
         open={settingsOpen}
         email={account?.email ?? authUser?.email ?? ''}
-        deepseekKey={account?.deepseekKey ?? null}
-        chatgptKey={account?.chatgptKey ?? null}
+        deepseek={account?.deepseek ?? null}
+        openai={account?.openai ?? null}
         selectedAi={account?.selectedAi ?? null}
         onClose={() => setSettingsOpen(false)}
         onSave={async (field, value) => setAccount(await window.robbot.account.updateAiConfig(accountId, field, value))}

@@ -21,8 +21,8 @@ export interface AccountRecord {
   updatedAt: number;
   lastLoginAt: number | null;
   metadataJson: string | null;
-  deepseekKey: string | null;
-  chatgptKey: string | null;
+  deepseek: string | null;
+  openai: string | null;
   selectedAi: string | null;
 }
 
@@ -115,12 +115,12 @@ export class AccountRepository {
     return requireRecord(this.db.select().from(accounts).where(eq(accounts.id, accountId)).get(), `Unknown account: ${accountId}`);
   }
 
-  updateAiConfig(accountId: string, field: 'deepseekKey' | 'chatgptKey', value: unknown): AccountRecord {
+  updateAiConfig(accountId: string, field: 'deepseek' | 'openai', value: unknown): AccountRecord {
     this.db.update(accounts).set({ [field]: JSON.stringify(value), updatedAt: Date.now() }).where(eq(accounts.id, accountId)).run();
     return this.get(accountId);
   }
 
-  selectAi(accountId: string, selectedAi: 'deepseekKey' | 'chatgptKey' | null): AccountRecord {
+  selectAi(accountId: string, selectedAi: 'deepseek' | 'openai' | null): AccountRecord {
     this.db.update(accounts).set({ selectedAi, updatedAt: Date.now() }).where(eq(accounts.id, accountId)).run();
     return this.get(accountId);
   }

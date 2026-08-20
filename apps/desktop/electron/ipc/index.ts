@@ -40,10 +40,10 @@ export function registerIpcHandlers(services: RuntimeServices): void {
 
   ipcMain.handle('account:upsert-current', (_event, input: UpsertAccountInput) => services.accounts.upsert(input));
   ipcMain.handle('account:get', (_event, accountId: string) => services.accounts.get(accountId));
-  ipcMain.handle('account:update-ai-config', (_event, accountId: string, field: 'deepseekKey' | 'chatgptKey', value: unknown) =>
+  ipcMain.handle('account:update-ai-config', (_event, accountId: string, field: 'deepseek' | 'openai', value: unknown) =>
     services.accounts.updateAiConfig(accountId, field, value),
   );
-  ipcMain.handle('account:select-ai', (_event, accountId: string, selectedAi: 'deepseekKey' | 'chatgptKey' | null) =>
+  ipcMain.handle('account:select-ai', (_event, accountId: string, selectedAi: 'deepseek' | 'openai' | null) =>
     services.accounts.selectAi(accountId, selectedAi),
   );
 

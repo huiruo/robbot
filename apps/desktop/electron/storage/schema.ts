@@ -21,20 +21,19 @@ export const accounts = sqliteTable(
     /*
     {
       "key": "...",
-      "model": "...",
-      "apiUrl": "..."
+      "model": "..."
     }
     */
-    deepseekKey: text('deepseek_key'),
+    deepseek: text('deepseek'),
     /*
     {
       "key": "...",
       "model": "...",
       "apiUrl": "..."
-    } 
+    }
     */
+    openai: text('openai'),
     // openai | deepseek
-    chatgptKey: text('chatgpt_key'),
     selectedAi: text('selected_ai'),
   },
   (table) => ({

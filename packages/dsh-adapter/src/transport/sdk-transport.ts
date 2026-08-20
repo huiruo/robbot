@@ -34,9 +34,19 @@ interface SdkRunState {
   runId: string;
   sessionId: string;
   promptMessageId?: string;
+  promptAccepted: boolean;
+  pendingNotifications: Array<{ method: string; params: unknown }>;
   sawTurnEnd: boolean;
-  turnEndKind?: string;
+  turnEndReason?: SdkTurnEndReason;
   idle: boolean;
+}
+
+interface SdkTurnEndReason {
+  kind?: string;
+  error?: {
+    message?: string;
+    code?: string;
+  };
 }
 
 export class SdkTransport implements HarnessTransport {
@@ -60,12 +70,12 @@ export class SdkTransport implements HarnessTransport {
       toolEvents: true,
       cancelCurrentRun: false,
       approval: false,
-      sessionResume: true,
+      sessionResume: false,
     };
   }
 
   async createSession(input: CreateSessionInput): Promise<HarnessSession> {
-    const id = stableSessionId(input);
+    const id = randomUUID();
     const processKey = `workspace:${input.workspacePath}`;
     const channel = await this.ensureInitialized(processKey, input.workspacePath);
     this.sessions.set(id, {
@@ -94,6 +104,8 @@ export class SdkTransport implements HarnessTransport {
     const state: SdkRunState = {
       runId,
       sessionId,
+      promptAccepted: false,
+      pendingNotifications: [],
       sawTurnEnd: false,
       idle: false,
     };
@@ -107,24 +119,25 @@ export class SdkTransport implements HarnessTransport {
         contentBlocks: [{ type: 'text', text: input.prompt }],
       });
       state.promptMessageId = receipt.messageId;
+      for (const notification of state.pendingNotifications.splice(0)) {
+        this.handleNotification(notification.method, notification.params);
+      }
 
-      while (!state.sawTurnEnd || !state.idle) {
+      while (!state.promptAccepted || !state.sawTurnEnd || !state.idle) {
         const event = await queue.shift();
         if (event) {
           yield event;
         }
       }
 
-      if (!state.turnEndKind || state.turnEndKind === 'completed') {
+      if (!state.turnEndReason?.kind || state.turnEndReason.kind === 'completed') {
         yield { type: 'run.completed', runId };
       } else {
+        const error = errorFromTurnEndReason(state.turnEndReason);
         yield {
           type: 'run.failed',
           runId,
-          error: {
-            code: state.turnEndKind,
-            message: `DSH SDK turn ended with reason: ${state.turnEndKind}`,
-          },
+          error,
         };
       }
     } catch (error) {
@@ -249,14 +262,45 @@ export class SdkTransport implements HarnessTransport {
     }
 
     const state = this.runStates.get(sessionId);
+    if (state && !state.promptMessageId && (method === 'session.event' || method === 'session.status')) {
+      state.pendingNotifications.push({ method, params });
+      return;
+    }
+
     if (method === 'session.event' && state) {
       const event = asRecord(asRecord(params)?.event);
+      if (!state.promptAccepted && isInboxReceipt(event, state.promptMessageId)) {
+        state.promptAccepted = true;
+        this.getQueue(sessionId).push(undefined);
+        return;
+      }
+
+      if (!state.promptAccepted) {
+        return;
+      }
+
       if (event?.type === 'turn/end') {
-        state.turnEndKind = turnEndKind(event);
+        state.turnEndReason = turnEndReason(event);
+        if (state.turnEndReason?.kind === 'error') {
+          console.warn('[robbot:dsh-sdk] turn ended with error', {
+            sessionId,
+            code: state.turnEndReason.error?.code ?? state.turnEndReason.kind,
+            message: summarizeForLog(state.turnEndReason.error?.message),
+          });
+        }
+      } else if (event?.type === 'llm/retry') {
+        console.warn('[robbot:dsh-sdk] llm retry', {
+          sessionId,
+          event: summarizeForLog(event),
+        });
       }
     }
 
     if (method === 'session.status' && state) {
+      if (!state.promptAccepted) {
+        return;
+      }
+
       const status = asRecord(params)?.status;
       if (status === 'idle') {
         state.idle = true;
@@ -289,22 +333,66 @@ export class SdkTransport implements HarnessTransport {
   }
 }
 
-function stableSessionId(input: CreateSessionInput): string {
-  return typeof input.metadata?.robbotSessionId === 'string' ? input.metadata.robbotSessionId : randomUUID();
-}
-
 function notificationSessionId(params: unknown): string | undefined {
   const value = asRecord(params)?.sessionId;
   return typeof value === 'string' ? value : undefined;
+}
+
+function isInboxReceipt(event: Record<string, unknown> | undefined, messageId: string | undefined): boolean {
+  if (!event || event.type !== 'agent/inbox/spliced' || !messageId) {
+    return false;
+  }
+
+  const inserted = asRecord(event.data)?.inserted;
+  return Array.isArray(inserted)
+    && inserted.some((message) => asRecord(message)?.id === messageId);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
-function turnEndKind(event: Record<string, unknown>): string | undefined {
+function turnEndReason(event: Record<string, unknown>): SdkTurnEndReason | undefined {
   const reason = asRecord(asRecord(event.data)?.reason);
-  return typeof reason?.kind === 'string' ? reason.kind : undefined;
+  if (!reason) {
+    return undefined;
+  }
+
+  const error = asRecord(reason.error);
+  return {
+    kind: typeof reason.kind === 'string' ? reason.kind : undefined,
+    error: error
+      ? {
+          message: typeof error.message === 'string' ? error.message : undefined,
+          code: typeof error.code === 'string' ? error.code : undefined,
+        }
+      : undefined,
+  };
+}
+
+function errorFromTurnEndReason(reason: SdkTurnEndReason): { message: string; code?: string } {
+  const code = reason.error?.code ?? reason.kind ?? 'unknown_turn_end_reason';
+  const message = reason.error?.message
+    ?? `DSH SDK turn ended with reason: ${reason.kind ?? 'unknown'}`;
+  return { code, message };
+}
+
+function summarizeForLog(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.length > 500 ? `${value.slice(0, 500)}...` : value;
+  }
+
+  if (value && typeof value === 'object') {
+    const summary = JSON.stringify(value, (_key, child) => {
+      if (typeof child === 'string' && child.length > 500) {
+        return `${child.slice(0, 500)}...`;
+      }
+      return child;
+    });
+    return summary.length > 1000 ? `${summary.slice(0, 1000)}...` : summary;
+  }
+
+  return value;
 }
 
 class AsyncEventQueue<T> {

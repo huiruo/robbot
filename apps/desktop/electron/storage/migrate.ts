@@ -84,6 +84,17 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS messages_retry_source_idx ON messages(retry_source_message_id);
     `,
   },
+  {
+    id: '0004_account_deepseek_key',
+    sql: `ALTER TABLE accounts ADD COLUMN deepseek_key TEXT;`,
+  },
+  {
+    id: '0005_account_ai_configs',
+    sql: `
+      ALTER TABLE accounts ADD COLUMN chatgpt_key TEXT;
+      ALTER TABLE accounts ADD COLUMN selected_ai TEXT;
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

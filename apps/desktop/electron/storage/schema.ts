@@ -18,6 +18,23 @@ export const accounts = sqliteTable(
     updatedAt: integer('updated_at').notNull(),
     lastLoginAt: integer('last_login_at'),
     metadataJson: text('metadata_json'),
+    /*
+    {
+      "key": "...",
+      "model": "...",
+      "apiUrl": "..."
+    }
+    */
+    deepseekKey: text('deepseek_key'),
+    /*
+    {
+      "key": "...",
+      "model": "...",
+      "apiUrl": "..."
+    } 
+    */
+    chatgptKey: text('chatgpt_key'),
+    selectedAi: text('selected_ai'),
   },
   (table) => ({
     emailUnique: uniqueIndex('accounts_email_unique').on(table.email),

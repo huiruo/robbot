@@ -1,7 +1,8 @@
-import { Edit3, Folder, FolderOpen, LogOut, MessageSquarePlus, RefreshCw, Trash2 } from 'lucide-react'
+import { Edit3, Folder, FolderOpen, MessageSquarePlus, RefreshCw, Trash2 } from 'lucide-react'
 import type { ActiveRunRef, HarnessLogEntry, HarnessRuntimeStatus, SessionRecord, WorkspaceRecord } from '../../robbot-api'
 import type { ApprovalState } from '../../lib/harness-event-store'
 import { RuntimeStatusBadge } from './RuntimeStatusBadge'
+import { LoginStatus } from './LoginStatus'
 
 export function WorkspaceSidebar(props: {
   status: HarnessRuntimeStatus | null
@@ -21,6 +22,9 @@ export function WorkspaceSidebar(props: {
   onDeleteWorkspace(workspace: WorkspaceRecord): void
   onDeleteSession(session: SessionRecord): void
   onLogout(): void
+  email: string
+  avatar: string | null
+  onSettings(): void
 }) {
   return (
     <aside className="flex min-h-0 flex-col border-r border-slate-200 bg-[#fbfbfc]">
@@ -58,10 +62,7 @@ export function WorkspaceSidebar(props: {
       </section>
 
       <RuntimeStatusBadge status={props.status} logs={props.logs} />
-      <button className="m-3 flex items-center justify-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-[12px] text-slate-600 hover:bg-slate-100" onClick={props.onLogout}>
-        <LogOut className="h-3.5 w-3.5" />
-        Sign out
-      </button>
+      <LoginStatus email={props.email} avatar={props.avatar} onSettings={props.onSettings} />
     </aside>
   )
 }

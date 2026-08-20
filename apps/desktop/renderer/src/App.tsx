@@ -7,6 +7,8 @@ import { useWorkspaceChat } from './hooks/useWorkspaceChat'
 import { useActiveRuns, useApprovals, useHarnessEvents, useHarnessLogs } from './lib/harness-event-store'
 import { LoginPage } from './components/auth/LoginPage'
 import { clearAuth, getAuthUser } from './auth'
+import { SettingsModal } from './components/home/SettingsModal'
+import type { AccountRecord } from './robbot-api'
 import './App.css'
 
 function App() {
@@ -31,6 +33,13 @@ function App() {
 
 function AuthenticatedApp({ accountId, onLogout }: { accountId: string; onLogout: () => void }) {
   useHarnessEvents()
+  const [account, setAccount] = useState<AccountRecord | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const authUser = getAuthUser()
+
+  useEffect(() => {
+    void window.robbot.account.get(accountId).then(setAccount)
+  }, [accountId])
 
   const workspaceChat = useWorkspaceChat(accountId)
   const activeRuns = useActiveRuns()
@@ -66,6 +75,9 @@ function AuthenticatedApp({ accountId, onLogout }: { accountId: string; onLogout
           onDeleteWorkspace={(workspace) => void workspaceChat.deleteWorkspace(workspace)}
           onDeleteSession={(session) => void workspaceChat.deleteSession(session)}
           onLogout={onLogout}
+          email={account?.email ?? authUser?.email ?? ''}
+          avatar={account?.avatar ?? authUser?.avatar ?? null}
+          onSettings={() => setSettingsOpen(true)}
         />
         <ChatPane
           workspace={workspaceChat.workspace}
@@ -88,6 +100,18 @@ function AuthenticatedApp({ accountId, onLogout }: { accountId: string; onLogout
         target={workspaceChat.renameTarget}
         onCancel={() => workspaceChat.setRenameTarget(null)}
         onRename={(value) => void workspaceChat.renameItem(value)}
+      />
+      <SettingsModal
+        key={settingsOpen ? 'open' : 'closed'}
+        open={settingsOpen}
+        email={account?.email ?? authUser?.email ?? ''}
+        deepseekKey={account?.deepseekKey ?? null}
+        chatgptKey={account?.chatgptKey ?? null}
+        selectedAi={account?.selectedAi ?? null}
+        onClose={() => setSettingsOpen(false)}
+        onSave={async (field, value) => setAccount(await window.robbot.account.updateAiConfig(accountId, field, value))}
+        onSelect={async (field) => setAccount(await window.robbot.account.selectAi(accountId, field))}
+        onLogout={() => { setSettingsOpen(false); onLogout() }}
       />
     </>
   )

@@ -1,4 +1,4 @@
-import { FolderOpen, LoaderCircle, Send } from 'lucide-react'
+import { LoaderCircle, Send } from 'lucide-react'
 
 export function Composer(props: {
   value: string

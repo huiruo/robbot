@@ -63,6 +63,7 @@ jobs:
         run: npm ci --prefix apps/desktop/renderer
 
       - name: Prepare app node_modules for Forge
+        shell: bash
         run: |
           node <<'NODE'
           const fs = require('node:fs');

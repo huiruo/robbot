@@ -14,10 +14,21 @@ function getRendererHtmlPath(): string {
   return path.join(app.getAppPath(), 'renderer/dist/index.html');
 }
 
+function getIconPath(): string {
+  return path.join(app.getAppPath(), 'assets/icon.png');
+}
+
 export async function createMainWindow(): Promise<BrowserWindow> {
+  const iconPath = getIconPath();
+
+  if (process.platform === 'darwin') {
+    app.dock?.setIcon(iconPath);
+  }
+
   const win = new BrowserWindow({
     width: 1180,
     height: 780,
+    icon: iconPath,
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,

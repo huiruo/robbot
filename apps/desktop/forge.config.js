@@ -74,22 +74,56 @@ function ensureWorkspacePackageCopy(packageName, packageDir) {
   copyPackageDirectory(packageDir, path.join(__dirname, 'node_modules', ...packagePathParts(packageName)));
 }
 
+function readPackageJson(packageDir) {
+  return JSON.parse(fsSync.readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
+}
+
+function materializePackage(packageName, seen = new Set()) {
+  if (seen.has(packageName)) {
+    return;
+  }
+
+  seen.add(packageName);
+
+  const packageDir =
+    packageName === '@robbot/core'
+      ? path.resolve(__dirname, '../../packages/core')
+      : packageName === '@robbot/dsh-adapter'
+        ? path.resolve(__dirname, '../../packages/dsh-adapter')
+        : resolvePackageDir(packageName);
+  const targetPath = path.join(__dirname, 'node_modules', ...packagePathParts(packageName));
+
+  copyPackageDirectory(packageDir, targetPath);
+
+  const packageJson = readPackageJson(packageDir);
+  const childDependencies = {
+    ...packageJson.dependencies,
+    ...packageJson.optionalDependencies,
+  };
+
+  for (const childPackageName of Object.keys(childDependencies)) {
+    try {
+      materializePackage(childPackageName, seen);
+    } catch (error) {
+      if (!packageJson.optionalDependencies?.[childPackageName]) {
+        throw error;
+      }
+    }
+  }
+}
+
+function materializeRuntimeDependencies() {
+  const packageJson = readPackageJson(__dirname);
+
+  for (const packageName of Object.keys(packageJson.dependencies ?? {})) {
+    materializePackage(packageName);
+  }
+}
+
 module.exports = {
   hooks: {
     async prePackage() {
-      ensureWorkspacePackageCopy('@robbot/core', path.resolve(__dirname, '../../packages/core'));
-      ensureWorkspacePackageCopy('@robbot/dsh-adapter', path.resolve(__dirname, '../../packages/dsh-adapter'));
-      ensurePackageCopy('better-sqlite3', path.join(__dirname, 'node_modules', 'better-sqlite3'));
-      ensurePackageCopy('drizzle-orm', path.join(__dirname, 'node_modules', 'drizzle-orm'));
-      ensurePackageCopy(
-        'electron-squirrel-startup',
-        path.join(__dirname, 'node_modules', 'electron-squirrel-startup'),
-      );
-      ensurePackageCopy('node-addon-api', path.join(__dirname, 'node_modules', 'node-addon-api'));
-
-      const betterSqlite3Dir = resolvePackageDir('better-sqlite3');
-
-      ensurePackageCopy('node-addon-api', path.join(betterSqlite3Dir, 'node_modules', 'node-addon-api'));
+      materializeRuntimeDependencies();
     },
   },
   packagerConfig: {

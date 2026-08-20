@@ -14,9 +14,9 @@
     "build": "npm run build:deps && npm run build:renderer && npm run build:electron",
     "start": "npm run build && electron-forge start",
     "test": "npm run build",
-    "package": "npm run build && electron-forge package",
-    "make": "npm run build && electron-forge make",
-    "publish": "npm run build && electron-forge publish"
+    "package": "npm run build && node scripts/forge-runtime-package.mjs package",
+    "make": "npm run build && node scripts/forge-runtime-package.mjs make",
+    "publish": "npm run build && node scripts/forge-runtime-package.mjs publish"
   },
   "author": "",
   "license": "ISC",

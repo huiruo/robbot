@@ -1,6 +1,5 @@
 const path = require('node:path');
 const fsSync = require('node:fs');
-const fs = require('node:fs/promises');
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 const electronVersion = require('./package.json').devDependencies.electron.replace(/^[^\d]*/, '');
@@ -34,7 +33,8 @@ function findPnpmPackageDir(packageName, rootDir) {
 }
 
 function resolvePackageDir(packageName) {
-  const searchPaths = [__dirname, path.resolve(__dirname, '../..')];
+  const repoRoot = path.resolve(__dirname, '../..');
+  const searchPaths = [repoRoot, __dirname];
 
   for (const searchPath of searchPaths) {
     const directPackageDir = path.join(searchPath, 'node_modules', ...packagePathParts(packageName));
@@ -53,37 +53,49 @@ function resolvePackageDir(packageName) {
   throw new Error(`Could not locate package root for ${packageName}`);
 }
 
-function ensurePackageLink(packageName, linkPath) {
-  const target = resolvePackageDir(packageName);
+function copyPackageDirectory(sourcePath, targetPath) {
+  const realSourcePath = fsSync.realpathSync(sourcePath);
 
-  fsSync.mkdirSync(path.dirname(linkPath), { recursive: true });
-  fsSync.rmSync(linkPath, { force: true, recursive: true });
-  fsSync.symlinkSync(target, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
+  fsSync.rmSync(targetPath, { force: true, recursive: true });
+  fsSync.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fsSync.cpSync(realSourcePath, targetPath, {
+    recursive: true,
+    filter(source) {
+      return source === realSourcePath || !path.relative(realSourcePath, source).split(path.sep).includes('node_modules');
+    },
+  });
 }
 
-async function removeDevelopmentMetadata(buildPath) {
-  const packageJsonPath = path.join(buildPath, 'package.json');
-  const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'));
+function ensurePackageCopy(packageName, targetPath) {
+  copyPackageDirectory(resolvePackageDir(packageName), targetPath);
+}
 
-  delete packageJson.devDependencies;
-  delete packageJson.scripts;
-
-  await fs.writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+function ensureWorkspacePackageCopy(packageName, packageDir) {
+  copyPackageDirectory(packageDir, path.join(__dirname, 'node_modules', ...packagePathParts(packageName)));
 }
 
 module.exports = {
   hooks: {
     async prePackage() {
+      ensureWorkspacePackageCopy('@robbot/core', path.resolve(__dirname, '../../packages/core'));
+      ensureWorkspacePackageCopy('@robbot/dsh-adapter', path.resolve(__dirname, '../../packages/dsh-adapter'));
+      ensurePackageCopy('better-sqlite3', path.join(__dirname, 'node_modules', 'better-sqlite3'));
+      ensurePackageCopy('drizzle-orm', path.join(__dirname, 'node_modules', 'drizzle-orm'));
+      ensurePackageCopy(
+        'electron-squirrel-startup',
+        path.join(__dirname, 'node_modules', 'electron-squirrel-startup'),
+      );
+      ensurePackageCopy('node-addon-api', path.join(__dirname, 'node_modules', 'node-addon-api'));
+
       const betterSqlite3Dir = resolvePackageDir('better-sqlite3');
 
-      ensurePackageLink('node-addon-api', path.join(betterSqlite3Dir, 'node_modules', 'node-addon-api'));
+      ensurePackageCopy('node-addon-api', path.join(betterSqlite3Dir, 'node_modules', 'node-addon-api'));
     },
   },
   packagerConfig: {
     asar: true,
     electronVersion,
     icon: path.resolve(__dirname, 'assets/icon'),
-    afterCopy: [removeDevelopmentMetadata],
     ignore: [
       /^\/renderer\/node_modules(\/|$)/,
       /^\/renderer\/src(\/|$)/,

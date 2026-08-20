@@ -124,6 +124,7 @@ module.exports = {
   hooks: {
     async prePackage() {
       materializeRuntimeDependencies();
+      materializePackage('electron');
     },
   },
   packagerConfig: {

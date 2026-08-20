@@ -19,6 +19,7 @@ export function ChatPane(props: {
   onCancel(): void
   onRetry(message: MessageRecord): void
   onCreateSession(): void
+  onCreateWorkspace(): void
   onApprovalDecision(approval: ApprovalState, approved: boolean): void
 }) {
   const endRef = useRef<HTMLDivElement | null>(null)
@@ -88,11 +89,13 @@ export function ChatPane(props: {
 
       <Composer
         value={props.prompt}
-        disabled={!props.session || Boolean(props.activeRun)}
+        disabled={Boolean(props.activeRun) || Boolean(props.workspace && !props.session)}
         running={Boolean(props.activeRun)}
-        placeholder={props.session ? 'Type a message...' : 'Select a chat first'}
+        placeholder={props.session ? 'Type a message...' : 'Open a folder to start'}
+        canCreateWorkspace={!props.workspace && !props.activeRun}
         onChange={props.onPromptChange}
         onSend={props.onSend}
+        onCreateWorkspace={props.onCreateWorkspace}
       />
     </section>
   )

@@ -1,14 +1,35 @@
+import { useEffect, useState } from 'react'
 import { ChatPane } from './components/home/ChatPane'
 import { RenameDialog } from './components/home/RenameDialog'
 import { WorkspaceSidebar } from './components/home/WorkspaceSidebar'
 import { useChatRuntime } from './hooks/useChatRuntime'
 import { useWorkspaceChat } from './hooks/useWorkspaceChat'
 import { useActiveRuns, useApprovals, useHarnessEvents, useHarnessLogs } from './lib/harness-event-store'
+import { LoginPage } from './components/auth/LoginPage'
+import { clearAuth, getAuthUser } from './auth'
 import './App.css'
 
-const accountId = 'local'
-
 function App() {
+  const [userId, setUserId] = useState(() => getAuthUser()?.id ?? null)
+  useEffect(() => {
+    const sync = () => setUserId(getAuthUser()?.id ?? null)
+    window.addEventListener('robbot-auth-changed', sync)
+    window.addEventListener('robbot-auth-expired', clearAuth)
+    return () => {
+      window.removeEventListener('robbot-auth-changed', sync)
+      window.removeEventListener('robbot-auth-expired', clearAuth)
+    }
+  }, [])
+
+  if (!userId) return <LoginPage onDone={setUserId} />
+  return <AuthenticatedApp accountId={userId} onLogout={() => {
+    if (window.confirm('Are you sure you want to sign out?')) {
+      clearAuth()
+    }
+  }} />
+}
+
+function AuthenticatedApp({ accountId, onLogout }: { accountId: string; onLogout: () => void }) {
   useHarnessEvents()
 
   const workspaceChat = useWorkspaceChat(accountId)
@@ -44,6 +65,7 @@ function App() {
           onRename={workspaceChat.startRename}
           onDeleteWorkspace={(workspace) => void workspaceChat.deleteWorkspace(workspace)}
           onDeleteSession={(session) => void workspaceChat.deleteSession(session)}
+          onLogout={onLogout}
         />
         <ChatPane
           workspace={workspaceChat.workspace}
@@ -58,6 +80,7 @@ function App() {
           onCancel={() => void chatRuntime.cancel()}
           onRetry={(message) => void chatRuntime.retry(message)}
           onCreateSession={() => void workspaceChat.createSession()}
+          onCreateWorkspace={() => void workspaceChat.selectDirectory()}
           onApprovalDecision={(approval, approved) => void chatRuntime.decideApproval(approval, approved)}
         />
       </main>

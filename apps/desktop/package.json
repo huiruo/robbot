@@ -4,10 +4,10 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev": "npm run build:deps && npm run build:electron && concurrently -k -n renderer,tsc,electron \"npm run dev:renderer\" \"npm run dev:electron:watch\" \"npm run dev:electron:start\"",
-    "dev:renderer": "npm --prefix renderer run dev -- --host 127.0.0.1 --port 5173 --strictPort",
+    "dev:renderer": "npm --prefix renderer run dev -- --host localhost --port 5187 --strictPort",
     "dev:electron": "npm run build:electron && npm run dev:electron:start",
     "dev:electron:watch": "tsc -p tsconfig.electron.json --watch",
-    "dev:electron:start": "wait-on tcp:127.0.0.1:5173 dist-electron/main/index.js && cross-env NODE_ENV=development ROBBOT_RENDERER_DEV_URL=http://127.0.0.1:5173 nodemon --delay 750ms --watch dist-electron --ext js,json --exec \"electron .\"",
+    "dev:electron:start": "wait-on tcp:localhost:5187 dist-electron/main/index.js && cross-env NODE_ENV=development ROBBOT_RENDERER_DEV_URL=http://localhost:5187 nodemon --delay 750ms --watch dist-electron --ext js,json --exec \"electron .\"",
     "build:renderer": "npm --prefix renderer run build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:deps": "pnpm --filter @robbot/core build && pnpm --filter @robbot/dsh-adapter build",

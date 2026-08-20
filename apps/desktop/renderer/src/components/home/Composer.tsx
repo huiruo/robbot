@@ -1,12 +1,14 @@
-import { LoaderCircle, Send } from 'lucide-react'
+import { FolderOpen, LoaderCircle, Send } from 'lucide-react'
 
 export function Composer(props: {
   value: string
   disabled: boolean
   running: boolean
   placeholder: string
+  canCreateWorkspace: boolean
   onChange(value: string): void
   onSend(): void
+  onCreateWorkspace(): void
 }) {
   return (
     <footer className="border-t border-slate-200 bg-white p-4">
@@ -16,6 +18,8 @@ export function Composer(props: {
           value={props.value}
           placeholder={props.placeholder}
           disabled={props.disabled}
+          readOnly={props.canCreateWorkspace}
+          onClick={props.canCreateWorkspace ? props.onCreateWorkspace : undefined}
           onChange={(event) => props.onChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {

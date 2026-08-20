@@ -40,14 +40,43 @@ export function useWorkspaceChat(accountId: string) {
     [accountId, workspaceId],
   )
 
+  const loadOrCreateDefaultSession = useCallback(
+    async (targetWorkspace: WorkspaceRecord) => {
+      const existingSessions = await window.robbot.session.list(accountId, targetWorkspace.id)
+      if (existingSessions.length) {
+        setSessions(existingSessions)
+        setSessionId((current) => current && existingSessions.some((item) => item.id === current) ? current : existingSessions[0].id)
+        return
+      }
+
+      const created = await window.robbot.session.create({
+        accountId,
+        workspaceId: targetWorkspace.id,
+        title: 'New Chat',
+      })
+      setSessions([created])
+      setSessionId(created.id)
+    },
+    [accountId],
+  )
+
   const bootstrap = useCallback(async () => {
     try {
       await window.robbot.account.upsertCurrent({ id: accountId, username: 'Local' })
-      await Promise.all([refreshStatus(), refreshWorkspaces(), refreshSessions()])
+      await refreshStatus()
+      const loadedWorkspaces = await window.robbot.workspace.list(accountId)
+      setWorkspaces(loadedWorkspaces)
+      const targetWorkspace = loadedWorkspaces.find((item) => item.id === workspaceId) ?? loadedWorkspaces[0]
+      if (targetWorkspace) {
+        setWorkspaceId(targetWorkspace.id)
+        await loadOrCreateDefaultSession(targetWorkspace)
+      } else {
+        setSessions([])
+      }
     } catch (cause) {
       setError(errorMessage(cause))
     }
-  }, [accountId, refreshSessions, refreshStatus, refreshWorkspaces])
+  }, [accountId, loadOrCreateDefaultSession, refreshStatus, workspaceId])
 
   useEffect(() => {
     queueMicrotask(() => void bootstrap())
@@ -61,21 +90,19 @@ export function useWorkspaceChat(accountId: string) {
       }
 
       setWorkspaceId(selected.id)
-      setSessionId(null)
       await refreshWorkspaces()
-      await refreshSessions(selected.id)
+      await loadOrCreateDefaultSession(selected)
     } catch (cause) {
       setError(errorMessage(cause))
     }
-  }, [accountId, refreshSessions, refreshWorkspaces])
+  }, [loadOrCreateDefaultSession, refreshWorkspaces])
 
   const openWorkspace = useCallback(
     async (target: WorkspaceRecord) => {
       setWorkspaceId(target.id)
-      setSessionId(null)
-      await refreshSessions(target.id)
+      await loadOrCreateDefaultSession(target)
     },
-    [refreshSessions],
+    [loadOrCreateDefaultSession],
   )
 
   const createSession = useCallback(

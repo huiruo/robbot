@@ -1,12 +1,18 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(scriptDir, '..');
+const repoRoot = path.resolve(appDir, '../..');
 const packageJsonPath = path.join(appDir, 'package.json');
-const forgeCliPath = path.join(appDir, 'node_modules', '@electron-forge', 'cli', 'dist', 'electron-forge.js');
+const requireFromApp = createRequire(path.join(appDir, 'package.json'));
+const forgeCliPackageJsonPath = requireFromApp.resolve('@electron-forge/cli/package.json', {
+  paths: [appDir, repoRoot],
+});
+const forgeCliPath = path.join(path.dirname(forgeCliPackageJsonPath), 'dist', 'electron-forge.js');
 const forgeArgs = process.argv.slice(2);
 const resolvedForgeArgs = [forgeArgs[0], appDir, ...forgeArgs.slice(1)];
 

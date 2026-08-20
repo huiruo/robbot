@@ -1,5 +1,6 @@
 {
   "name": "@robbot/desktop",
+  "productName": "Robbot",
   "version": "1.0.0",
   "main": "dist-electron/main/index.js",
   "scripts": {

@@ -130,6 +130,7 @@ module.exports = {
   packagerConfig: {
     asar: true,
     electronVersion,
+    executableName: 'Robbot',
     icon: path.resolve(__dirname, 'assets/icon'),
     ignore: [
       /^\/renderer\/node_modules(\/|$)/,
@@ -151,7 +152,10 @@ module.exports = {
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
-      config: {},
+      config: {
+        name: 'robbot',
+        setupExe: 'RobbotSetup.exe',
+      },
     },
     {
       name: '@electron-forge/maker-zip',

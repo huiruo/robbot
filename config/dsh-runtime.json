@@ -1,7 +1,7 @@
 {
   "submodule": "vendor/deepseek-harness",
-  "protocol": "sdk",
-  "profile": "sdk",
+  "protocol": "web",
+  "profile": "web",
   "buildRequired": true,
   "provider": "deepseek-official",
   "model": "deepseek-v4-flash",

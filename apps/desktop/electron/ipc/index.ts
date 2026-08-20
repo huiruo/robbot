@@ -91,6 +91,7 @@ export function registerIpcHandlers(services: RuntimeServices): void {
   );
 
   ipcMain.handle('message:list', (_event, sessionId: string) => services.messages.list(sessionId));
+  ipcMain.handle('session-events:list', (_event, sessionId: string) => services.sessionEvents.list(sessionId));
 
   ipcMain.handle('harness:get-status', () => services.harness.getStatus());
   ipcMain.handle('harness:list-active-runs', () => services.harness.getActiveRuns());

@@ -10,6 +10,8 @@
   config:
     thinking: enabled
     reasoningEffort: max
+    apiKeyEnv: DEEPSEEK_API_KEY
+    baseURL: !!js process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com'
     models:
       - id: !!js process.env.DSH_MODEL ?? 'deepseek-v4-flash'
         contextWindow: !!js Number(process.env.DSH_CONTEXT_WINDOW ?? 1000000)
@@ -25,13 +27,46 @@
           - id: !!js process.env.DSH_MODEL ?? process.env.ROBBOT_OPENAI_MODEL ?? 'gpt-5.6-luna'
             contextWindow: !!js Number(process.env.DSH_CONTEXT_WINDOW ?? 1000000)
 
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
+  config:
+    provider: !!js process.env.DSH_PROVIDER ?? 'deepseek-official'
+    model: !!js process.env.DSH_MODEL ?? 'deepseek-v4-flash'
+
 - id: subprocess
   name: '@deepseek-ai/dsh-subprocess-local'
 
-- id: bash
-  name: '@deepseek-ai/dsh-bash-local'
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
   config:
-    cwd: !!js process.env.DSH_CWD ?? process.cwd()
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.env.DSH_CWD ?? process.cwd()
+
+- id: approval
+  name: '@deepseek-ai/dsh-user-approval'
+  config:
+    policy: !!js "(process.env.DSH_PERMISSION_MODE ?? 'workspace-write') === 'danger-full-access' ? 'never' : 'ask'"
+
+- id: permission-presets
+  name: '@deepseek-ai/dsh-permission-presets'
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+
+- id: bash
+  name: '@deepseek-ai/dsh-bash-sandbox'
+  config:
     timeoutMs: 60000
 
 - id: agent-spine
@@ -41,16 +76,22 @@
     workspaceContext:
       maxBytes: 65536
     skills:
-      enabled: false
+      enabled: true
     toolBash:
-      enableRunInBackground: false
-    toolJobs: false
+      enableRunInBackground: true
+    toolJobs: true
 
 - id: sessions
   name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:
     root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
     compression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
+
+- id: session-query-sqlite
+  name: '@deepseek-ai/dsh-session-query-sqlite'
+  config:
+    path: !!js process.env.DSH_SESSION_QUERY_PATH ?? ':memory:'
+    openAt: !!js process.env.DSH_SESSION_QUERY_OPEN_AT ?? 'startup'
 
 - id: session-checkpoints
   name: '@deepseek-ai/dsh-session-checkpoint-policy'
@@ -76,7 +117,7 @@
     allowParallelInProgress: true
 
 - id: fs-local
-  name: '@deepseek-ai/dsh-fs-local'
+  name: '@deepseek-ai/dsh-fs-sandbox'
   config:
     cwd: !!js process.env.DSH_CWD ?? process.cwd()
 

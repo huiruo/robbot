@@ -1,15 +1,19 @@
 import { useEffect, useRef } from 'react'
 import { CircleAlert, FolderPlus, Square } from 'lucide-react'
 import type { ActiveRunRef, MessageRecord, SessionRecord, WorkspaceRecord } from '../../robbot-api'
-import type { ApprovalState } from '../../lib/harness-event-store'
+import type { ApprovalState, ToolActivity } from '../../lib/harness-event-store'
 import { ApprovalCard } from './ApprovalCard'
 import { ChatMessageCard } from './ChatMessageCard'
 import { Composer } from './Composer'
+import { ToolActivityCard } from './ToolActivityCard'
+import { BrainCircuit } from 'lucide-react'
 
 export function ChatPane(props: {
   workspace: WorkspaceRecord | null
   session: SessionRecord | null
   messages: MessageRecord[]
+  activities: ToolActivity[]
+  reasoning: string
   activeRun: ActiveRunRef | undefined
   approval: ApprovalState | undefined
   pendingRetryMessageId: string | null
@@ -76,6 +80,13 @@ export function ChatPane(props: {
               onRetry={props.onRetry}
             />
           ))}
+          {props.reasoning ? (
+            <details className="group rounded-xl border border-violet-100 bg-violet-50/70 px-3 py-2 text-[13px] text-violet-900" open={Boolean(props.activeRun)}>
+              <summary className="flex cursor-pointer list-none items-center gap-2 font-medium"><BrainCircuit className="h-4 w-4" />Thinking process<span className="ml-auto text-[11px] text-violet-400 group-open:hidden">Show</span></summary>
+              <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap border-t border-violet-100 pt-2 font-mono text-[11px] leading-5 text-violet-800">{props.reasoning}</pre>
+            </details>
+          ) : null}
+          {props.activities.map((activity) => <ToolActivityCard key={activity.id} activity={activity} />)}
           {props.approval ? (
             <ApprovalCard approval={props.approval} onDecision={(approved) => props.onApprovalDecision(props.approval!, approved)} />
           ) : null}

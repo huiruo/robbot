@@ -1,12 +1,12 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { accessSync, constants, readFileSync } from 'node:fs';
+import { accessSync, constants, copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { HarnessError } from '@robbot/core';
 
 import { StdioChannel } from './stdio-channel.js';
 
-export type DshProcessProtocol = 'sdk' | 'acp';
+export type DshProcessProtocol = 'sdk' | 'acp' | 'web';
 
 export class DshProcess {
   private child?: ChildProcessWithoutNullStreams;
@@ -24,13 +24,16 @@ export class DshProcess {
     }
 
     const nodeExecutable = resolveNodeExecutable();
-    const bin = this.protocol === 'sdk'
-      ? 'packages/examples/jsonrpc-demo/src/bin.ts'
-      : 'packages/examples/acp-demo/src/bin.ts';
+    const bin = this.protocol === 'acp'
+      ? 'packages/examples/acp-demo/src/bin.ts'
+      : this.protocol === 'sdk'
+        ? 'packages/examples/jsonrpc-demo/src/bin.ts'
+        : 'apps/cli/src/bin.ts';
     const args = this.protocol === 'sdk'
       ? ['--import', 'tsx', bin, this.configPath]
-      : ['--import', 'tsx', bin, '--config', this.configPath];
-
+      : this.protocol === 'acp'
+        ? ['--import', 'tsx', bin, '--config', this.configPath]
+      : ['--import', 'tsx/esm', bin, 'web', '--host', '127.0.0.1', '--port', envPort(this.envOverrides)];
     console.info('[robbot:dsh-process] starting DSH process', {
       cwd: this.cwd,
       protocol: this.protocol,
@@ -49,7 +52,7 @@ export class DshProcess {
       ROBBOT_DEEPSEEK_MODEL: process.env.ROBBOT_DEEPSEEK_MODEL ?? robbotEnv.ROBBOT_DEEPSEEK_MODEL,
       OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? robbotEnv.OPENAI_API_KEY,
       OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? robbotEnv.OPENAI_BASE_URL,
-      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? robbotEnv.DEEPSEEK_API_KEY ?? 'sk-dummy-for-boot',
+      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? robbotEnv.DEEPSEEK_API_KEY,
       DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL ?? robbotEnv.DEEPSEEK_BASE_URL,
       DSH_MODEL: process.env.DSH_MODEL ?? robbotEnv.DSH_MODEL,
       DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? 'workspace-write',
@@ -57,6 +60,14 @@ export class DshProcess {
       TSX_TSCONFIG_PATH: path.join(this.cwd, 'tsconfig.json'),
       ...this.envOverrides,
     };
+    const dshHome = (launchEnv as Record<string, string | undefined>).DSH_HOME;
+    if (this.protocol === 'web' && dshHome) {
+      const patchPath = path.resolve(this.cwd, this.configPath);
+      const profilePatchPath = path.join(dshHome, 'profiles', 'web', 'cordis.patch.yml');
+      mkdirSync(path.dirname(profilePatchPath), { recursive: true });
+      copyFileSync(patchPath, profilePatchPath);
+      console.info('[robbot:dsh-process] projected web profile patch', { profilePatchPath });
+    }
     console.info('[robbot:dsh-process] launch env summary', summarizeLaunchEnv(launchEnv));
 
     this.child = spawn(nodeExecutable, args, {
@@ -200,6 +211,10 @@ function isExecutableFile(candidate: string): boolean {
 
 function isElectronRuntime(): boolean {
   return Boolean(process.versions.electron);
+}
+
+function envPort(env: Record<string, string | undefined>): string {
+  return env.ROBBOT_DSH_WEB_PORT ?? '3187';
 }
 
 function readRobbotEnvFromDshRoot(dshRoot: string): Record<string, string> {

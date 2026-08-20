@@ -3,9 +3,12 @@ import {
   clearApproval,
   seedActiveRuns,
   seedSessionMessages,
+  seedSessionEvents,
   useActiveRun,
   useApproval,
   useSessionMessages,
+  useSessionActivities,
+  useSessionReasoning,
   useTerminalEvent,
   useTerminalEvents,
   type ApprovalState,
@@ -26,6 +29,8 @@ export function useChatRuntime(input: {
   const terminalReloadedRef = useRef<Record<string, string>>({})
   const pendingRetryMessageIdRef = useRef<string | null>(null)
   const messages = useSessionMessages(session?.id ?? null)
+  const activities = useSessionActivities(session?.id ?? null)
+  const reasoning = useSessionReasoning(session?.id ?? null)
   const activeRun = useActiveRun(session?.id ?? null)
   const approval = useApproval(session?.id ?? null)
   const terminalEvent = useTerminalEvent(session?.id ?? null)
@@ -33,6 +38,7 @@ export function useChatRuntime(input: {
 
   const loadMessages = useCallback(async (sessionId: string) => {
     seedSessionMessages(sessionId, await window.robbot.message.list(sessionId))
+    seedSessionEvents(sessionId, await window.robbot.message.listEvents(sessionId))
   }, [])
 
   const refreshActiveRuns = useCallback(async () => {
@@ -64,8 +70,12 @@ export function useChatRuntime(input: {
   useEffect(() => {
     if (terminalEvent) {
       void loadMessages(terminalEvent.sessionId)
+      if (terminalEvent.type === 'run.failed') {
+        const payload = terminalEvent.payload
+        onError(typeof payload === 'object' && payload !== null && 'message' in payload ? String((payload as { message?: unknown }).message ?? 'DSH run failed') : 'DSH run failed')
+      }
     }
-  }, [loadMessages, terminalEvent])
+  }, [loadMessages, onError, terminalEvent])
 
   const send = useCallback(async () => {
     if (!workspace || !session || !prompt.trim() || activeRun) {
@@ -149,6 +159,8 @@ export function useChatRuntime(input: {
     prompt,
     setPrompt,
     messages,
+    activities,
+    reasoning,
     activeRun,
     approval,
     pendingRetryMessageId,

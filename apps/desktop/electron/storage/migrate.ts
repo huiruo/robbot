@@ -113,6 +113,21 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE sessions ADD COLUMN harness_ai_config_fingerprint TEXT;
     `,
   },
+  {
+    id: '0008_dsh_session_event_projection',
+    sql: `
+      CREATE TABLE IF NOT EXISTS session_events (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        seq INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS session_events_session_seq_unique ON session_events(session_id, seq);
+      CREATE INDEX IF NOT EXISTS session_events_session_seq_idx ON session_events(session_id, seq);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

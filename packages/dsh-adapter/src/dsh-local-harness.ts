@@ -4,24 +4,28 @@ import { HarnessError } from '@robbot/core';
 import { DshRuntimeManager } from './runtime/dsh-runtime-manager.js';
 import { AcpTransport } from './transport/acp-transport.js';
 import { SdkTransport } from './transport/sdk-transport.js';
+import { WebTransport } from './transport/web-transport.js';
 import type { HarnessTransport } from './transport/transport.js';
 
 export interface DshLocalHarnessOptions {
   runtimeManager?: DshRuntimeManager;
   sdkTransport?: SdkTransport;
   acpTransport?: AcpTransport;
+  webTransport?: WebTransport;
 }
 
 export class DshLocalHarness implements LocalHarness {
   private readonly runtimeManager: DshRuntimeManager;
   private readonly sdkTransport: SdkTransport;
   private readonly acpTransport: AcpTransport;
+  private readonly webTransport: WebTransport;
   private readonly sessionModes = new Map<string, HarnessRunMode>();
 
   constructor(options: DshLocalHarnessOptions = {}) {
     this.runtimeManager = options.runtimeManager ?? new DshRuntimeManager();
     this.sdkTransport = options.sdkTransport ?? new SdkTransport(this.runtimeManager);
     this.acpTransport = options.acpTransport ?? new AcpTransport(this.runtimeManager);
+    this.webTransport = options.webTransport ?? new WebTransport(this.runtimeManager);
   }
 
   capabilities(runMode?: HarnessRunMode): HarnessCapabilities {
@@ -75,6 +79,7 @@ export class DshLocalHarness implements LocalHarness {
   }
 
   async dispose(): Promise<void> {
+    await this.webTransport.dispose();
     await this.runtimeManager.stopAll();
   }
 
@@ -87,10 +92,12 @@ export class DshLocalHarness implements LocalHarness {
   }
 
   private transportForMode(runMode: HarnessRunMode): HarnessTransport {
-    return runMode === 'acp' ? this.acpTransport : this.sdkTransport;
+    if (runMode === 'acp') return this.acpTransport;
+    if (runMode === 'web') return this.webTransport;
+    return this.sdkTransport;
   }
 }
 
 function normalizeRunMode(value: unknown, fallback: HarnessRunMode): HarnessRunMode {
-  return value === 'acp' || value === 'sdk' ? value : fallback;
+  return value === 'acp' || value === 'web' || value === 'sdk' ? value : fallback;
 }

@@ -3,6 +3,7 @@ import type { ApprovalRequest } from './approval.js';
 export type HarnessEvent =
   | { type: 'run.started'; runId: string; sessionId: string }
   | { type: 'assistant.delta'; text: string }
+  | { type: 'assistant.reasoning.delta'; text: string }
   | { type: 'assistant.message'; text: string }
   | { type: 'tool.started'; toolCallId: string; name: string; input?: unknown }
   | { type: 'tool.output'; toolCallId: string; output: string }

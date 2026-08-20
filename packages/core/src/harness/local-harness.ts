@@ -3,7 +3,7 @@ import type { HarnessEvent } from './harness-event.js';
 import type { CreateSessionInput, HarnessSession, RunInput } from './harness-session.js';
 
 export type HarnessStreamingCapability = 'none' | 'committed-message' | 'runtime-events';
-export type HarnessRunMode = 'sdk' | 'acp';
+export type HarnessRunMode = 'sdk' | 'acp' | 'web';
 
 export interface HarnessCapabilities {
   streaming: HarnessStreamingCapability;

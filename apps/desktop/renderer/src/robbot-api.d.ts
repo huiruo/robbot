@@ -11,7 +11,7 @@ export interface HarnessRunResult {
   runMode: HarnessRunMode;
 }
 
-export type HarnessRunMode = 'sdk' | 'acp';
+export type HarnessRunMode = 'sdk' | 'acp' | 'web';
 export type HarnessStreamingCapability = 'none' | 'committed-message' | 'runtime-events';
 
 export interface HarnessCapabilities {
@@ -51,6 +51,7 @@ export interface HarnessWarmupInput {
 export type HarnessEventType =
   | 'run.started'
   | 'assistant.delta'
+  | 'assistant.reasoning.delta'
   | 'assistant.message'
   | 'tool.started'
   | 'tool.output'
@@ -143,6 +144,15 @@ export interface MessageRecord {
   updatedAt: number;
 }
 
+export interface SessionEventRecord {
+  id: string;
+  sessionId: string;
+  seq: number;
+  type: string;
+  payloadJson: string;
+  createdAt: number;
+}
+
 export interface UpsertAccountInput {
   id: string;
   email?: string | null;
@@ -200,6 +210,7 @@ export interface RobbotApi {
   };
   message: {
     list: (sessionId: string) => Promise<MessageRecord[]>;
+    listEvents: (sessionId: string) => Promise<SessionEventRecord[]>;
   };
   harness: {
     getStatus: () => Promise<HarnessRuntimeStatus>;

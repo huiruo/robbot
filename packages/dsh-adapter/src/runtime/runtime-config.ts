@@ -1,6 +1,6 @@
 export interface DshRuntimeConfig {
   submodule: string;
-  protocol: 'sdk' | 'acp';
+  protocol: 'sdk' | 'acp' | 'web';
   profile: string;
   buildRequired: boolean;
   provider?: string;

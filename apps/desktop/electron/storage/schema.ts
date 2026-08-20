@@ -126,9 +126,29 @@ export const messages = sqliteTable(
   }),
 );
 
+// Product-side projection of DSH's append-only session event log. The DSH JSONL
+// log remains authoritative; this table makes the Electron/SQLite UI restartable
+// without rebuilding the whole conversation on every paint.
+export const sessionEvents = sqliteTable(
+  'session_events',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    type: text('type').notNull(),
+    payloadJson: text('payload_json').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => ({
+    sessionSeqUnique: uniqueIndex('session_events_session_seq_unique').on(table.sessionId, table.seq),
+    sessionSeqIdx: index('session_events_session_seq_idx').on(table.sessionId, table.seq),
+  }),
+);
+
 export const schema = {
   accounts,
   workspaces,
   sessions,
   messages,
+  sessionEvents,
 };

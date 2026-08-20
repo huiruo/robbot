@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 
 import type { DesktopDatabase } from './database';
-import { accounts, messages, sessions, workspaces } from './schema';
+import { accounts, messages, sessionEvents, sessions, workspaces } from './schema';
 
 export type AccountStatus = 'active' | 'disabled';
 export type SessionStatus = 'active' | 'archived';
@@ -69,6 +69,36 @@ export interface MessageRecord {
   retryPromptMessageId: string | null;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface SessionEventRecord {
+  id: string;
+  sessionId: string;
+  seq: number;
+  type: string;
+  payloadJson: string;
+  createdAt: number;
+}
+
+export class SessionEventRepository {
+  constructor(private readonly db: DesktopDatabase) {}
+
+  append(sessionId: string, type: string, payload: unknown): SessionEventRecord {
+    const latest = this.db.select({ seq: sessionEvents.seq }).from(sessionEvents)
+      .where(eq(sessionEvents.sessionId, sessionId)).orderBy(desc(sessionEvents.seq)).limit(1).get();
+    const record = {
+      id: randomUUID(), sessionId, seq: (latest?.seq ?? 0) + 1, type,
+      payloadJson: JSON.stringify(payload ?? null), createdAt: Date.now(),
+    };
+    this.db.insert(sessionEvents).values(record).onConflictDoNothing().run();
+    return record;
+  }
+
+  list(sessionId: string, afterSeq = 0): SessionEventRecord[] {
+    return this.db.select().from(sessionEvents)
+      .where(and(eq(sessionEvents.sessionId, sessionId)))
+      .orderBy(asc(sessionEvents.seq)).all().filter((event) => event.seq > afterSeq);
+  }
 }
 
 export class AccountRepository {

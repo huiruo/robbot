@@ -84,6 +84,8 @@ function AuthenticatedApp({ accountId, onLogout }: { accountId: string; onLogout
           workspace={workspaceChat.workspace}
           session={workspaceChat.session}
           messages={chatRuntime.messages}
+          activities={chatRuntime.activities}
+          reasoning={chatRuntime.reasoning}
           activeRun={chatRuntime.activeRun}
           approval={chatRuntime.approval}
           pendingRetryMessageId={chatRuntime.pendingRetryMessageId}

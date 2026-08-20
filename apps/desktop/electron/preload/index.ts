@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('robbot', {
   },
   message: {
     list: (sessionId: string) => ipcRenderer.invoke('message:list', sessionId),
+    listEvents: (sessionId: string) => ipcRenderer.invoke('session-events:list', sessionId),
   },
   harness: {
     getStatus: () => ipcRenderer.invoke('harness:get-status'),

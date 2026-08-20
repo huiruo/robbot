@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react'
-import type { ActiveRunRef, HarnessEvent, HarnessLogEntry, MessageRecord, MessageStatus } from '../robbot-api'
+import type { ActiveRunRef, HarnessEvent, HarnessLogEntry, MessageRecord, MessageStatus, SessionEventRecord } from '../robbot-api'
 
 export type ApprovalState = {
   id: string
@@ -8,12 +8,23 @@ export type ApprovalState = {
   description?: string
 }
 
+export type ToolActivity = {
+  id: string
+  name: string
+  input?: string
+  output?: string
+  status: 'running' | 'completed' | 'failed'
+  createdAt: number
+}
+
 export type HarnessEventSnapshot = {
   activeRunsBySessionId: Record<string, ActiveRunRef>
   messagesBySessionId: Record<string, MessageRecord[]>
   approvalsBySessionId: Record<string, ApprovalState>
   logs: HarnessLogEntry[]
   terminalEventBySessionId: Record<string, HarnessEvent>
+  activitiesBySessionId: Record<string, ToolActivity[]>
+  reasoningBySessionId: Record<string, string>
 }
 
 const emptySnapshot: HarnessEventSnapshot = {
@@ -22,8 +33,11 @@ const emptySnapshot: HarnessEventSnapshot = {
   approvalsBySessionId: {},
   logs: [],
   terminalEventBySessionId: {},
+  activitiesBySessionId: {},
+  reasoningBySessionId: {},
 }
 const emptyMessages: MessageRecord[] = []
+const emptyActivities: ToolActivity[] = []
 
 let snapshot: HarnessEventSnapshot = emptySnapshot
 const listeners = new Set<() => void>()
@@ -80,6 +94,21 @@ export function seedSessionMessages(sessionId: string, stored: MessageRecord[]):
   })
 }
 
+export function seedSessionEvents(sessionId: string, stored: SessionEventRecord[]): void {
+  let next = snapshot
+  next = { ...next, activitiesBySessionId: { ...next.activitiesBySessionId, [sessionId]: [] }, reasoningBySessionId: { ...next.reasoningBySessionId, [sessionId]: '' } }
+  snapshot = next
+  for (const record of stored) {
+    try {
+      const event = JSON.parse(record.payloadJson) as HarnessEvent
+      if (event.type === 'assistant.reasoning.delta' || event.type === 'tool.started' || event.type === 'tool.completed' || event.type === 'tool.output') {
+        snapshot = reduceHarnessEvent(snapshot, event)
+      }
+    } catch { /* ignore a corrupt projection row; DSH JSONL remains authoritative */ }
+  }
+  setSnapshot(snapshot)
+}
+
 export function clearSessionMessages(sessionId: string): void {
   const nextMessages = { ...snapshot.messagesBySessionId }
   delete nextMessages[sessionId]
@@ -126,6 +155,14 @@ export function useTerminalEvent(sessionId: string | null): HarnessEvent | undef
 
 export function useTerminalEvents(): Record<string, HarnessEvent> {
   return useStoreSelector((state) => state.terminalEventBySessionId)
+}
+
+export function useSessionActivities(sessionId: string | null): ToolActivity[] {
+  return useStoreSelector((state) => (sessionId ? state.activitiesBySessionId[sessionId] ?? emptyActivities : emptyActivities))
+}
+
+export function useSessionReasoning(sessionId: string | null): string {
+  return useStoreSelector((state) => (sessionId ? state.reasoningBySessionId[sessionId] ?? '' : ''))
 }
 
 function subscribe(listener: () => void): () => void {
@@ -216,6 +253,38 @@ function reduceHarnessEvent(current: HarnessEventSnapshot, event: HarnessEvent):
     }
   }
 
+  if (event.type === 'assistant.reasoning.delta') {
+    const text = parseDelta(event)
+    if (!text) return current
+    return {
+      ...current,
+      reasoningBySessionId: {
+        ...current.reasoningBySessionId,
+        [event.sessionId]: `${current.reasoningBySessionId[event.sessionId] ?? ''}${text}`,
+      },
+    }
+  }
+
+  if (event.type === 'tool.started') {
+    const activity = parseToolStarted(event)
+    if (!activity) return current
+    const currentItems = current.activitiesBySessionId[event.sessionId] ?? []
+    return { ...current, activitiesBySessionId: { ...current.activitiesBySessionId, [event.sessionId]: [...currentItems.filter((item) => item.id !== activity.id), activity] } }
+  }
+
+  if (event.type === 'tool.completed' || event.type === 'tool.output') {
+    const update = parseToolCompleted(event)
+    if (!update) return current
+    const currentItems = current.activitiesBySessionId[event.sessionId] ?? []
+    return {
+      ...current,
+      activitiesBySessionId: {
+        ...current.activitiesBySessionId,
+        [event.sessionId]: currentItems.map((item) => item.id === update.id ? { ...item, ...update } : item),
+      },
+    }
+  }
+
   if (event.type === 'approval.required') {
     const approval = parseApproval(event)
     if (!approval) {
@@ -280,7 +349,7 @@ function parseStartedRun(event: HarnessEvent): ActiveRunRef | null {
 
   return {
     runId: event.runId,
-    runMode: payload.runMode === 'acp' ? 'acp' : 'sdk',
+    runMode: payload.runMode === 'acp' ? 'acp' : payload.runMode === 'web' ? 'web' : 'sdk',
     harnessSessionId: event.harnessSessionId,
     assistantMessageId: event.messageId,
     status: 'running',
@@ -415,6 +484,25 @@ function parseApproval(event: HarnessEvent): ApprovalState | null {
     title: typeof event.payload.title === 'string' ? event.payload.title : 'Permission required',
     description: typeof event.payload.description === 'string' ? event.payload.description : undefined,
   }
+}
+
+function parseToolStarted(event: HarnessEvent): ToolActivity | null {
+  if (!isObject(event.payload)) return null
+  const data = isObject(event.payload.data) ? event.payload.data : event.payload
+  const id = typeof data.callId === 'string' ? data.callId : typeof event.payload.toolCallId === 'string' ? event.payload.toolCallId : null
+  if (!id) return null
+  return { id, name: typeof data.name === 'string' ? data.name : 'Tool', input: typeof data.arguments === 'string' ? data.arguments : JSON.stringify(data.input ?? '', null, 2), status: 'running', createdAt: Date.now() }
+}
+
+function parseToolCompleted(event: HarnessEvent): Partial<ToolActivity> & { id: string } | null {
+  if (!isObject(event.payload)) return null
+  const data = isObject(event.payload.data) ? event.payload.data : event.payload
+  const message = isObject(data.message) ? data.message : {}
+  const source = isObject(message.source) ? message.source : {}
+  const id = typeof data.toolCallId === 'string' ? data.toolCallId : typeof source.callId === 'string' ? source.callId : null
+  if (!id) return null
+  const content = isObject(message) ? message.content : data.output
+  return { id, output: typeof content === 'string' ? content : JSON.stringify(content ?? data.result ?? '', null, 2), status: event.type === 'tool.output' ? 'running' : 'completed' }
 }
 
 function isTerminalEvent(event: HarnessEvent): boolean {

@@ -10,7 +10,7 @@ import {
   useTerminalEvents,
   type ApprovalState,
 } from '../lib/harness-event-store'
-import type { SessionRecord, WorkspaceRecord } from '../robbot-api'
+import type { MessageRecord, SessionRecord, WorkspaceRecord } from '../robbot-api'
 
 export function useChatRuntime(input: {
   accountId: string
@@ -92,6 +92,34 @@ export function useChatRuntime(input: {
     }
   }, [accountId, activeRun, loadMessages, onError, onSessionsRefresh, onStatusRefresh, prompt, refreshActiveRuns, session, workspace])
 
+  const retry = useCallback(async (message: MessageRecord) => {
+    if (!workspace || !session || activeRun) {
+      return
+    }
+
+    onError('')
+    try {
+      await window.robbot.harness.retryMessage(message.id)
+      await Promise.all([
+        loadMessages(session.id),
+        onSessionsRefresh(workspace.id),
+        refreshActiveRuns(),
+        onStatusRefresh(),
+      ])
+    } catch (cause) {
+      onError(errorMessage(cause))
+    }
+  }, [
+    activeRun,
+    loadMessages,
+    onError,
+    onSessionsRefresh,
+    onStatusRefresh,
+    refreshActiveRuns,
+    session,
+    workspace,
+  ])
+
   const cancel = useCallback(async () => {
     if (!session) {
       return
@@ -117,6 +145,7 @@ export function useChatRuntime(input: {
     activeRun,
     approval,
     send,
+    retry,
     cancel,
     decideApproval,
   }

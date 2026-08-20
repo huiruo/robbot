@@ -95,6 +95,8 @@ export const messages = sqliteTable(
     status: text('status', { enum: ['streaming', 'completed', 'failed', 'cancelled', 'interrupted'] })
       .notNull()
       .default('completed'),
+    retrySourceMessageId: text('retry_source_message_id'),
+    retryPromptMessageId: text('retry_prompt_message_id'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },

@@ -87,6 +87,7 @@ export function registerIpcHandlers(services: RuntimeServices): void {
   ipcMain.handle('harness:get-status', () => services.harness.getStatus());
   ipcMain.handle('harness:list-active-runs', () => services.harness.getActiveRuns());
   ipcMain.handle('harness:run-prompt', (_event, input: HarnessRunInput) => services.harness.runPrompt(input));
+  ipcMain.handle('harness:retry-message', (_event, messageId: string) => services.harness.retryMessage(messageId));
   ipcMain.handle('harness:cancel', (_event, sessionId: string) => services.harness.cancel(sessionId));
   ipcMain.handle('harness:approve', (_event, sessionId: string, approvalId: string, approved: boolean) =>
     services.harness.approve(sessionId, { approvalId, approved }),

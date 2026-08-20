@@ -56,6 +56,7 @@ function App() {
           onPromptChange={chatRuntime.setPrompt}
           onSend={() => void chatRuntime.send()}
           onCancel={() => void chatRuntime.cancel()}
+          onRetry={(message) => void chatRuntime.retry(message)}
           onCreateSession={() => void workspaceChat.createSession()}
           onApprovalDecision={(approval, approved) => void chatRuntime.decideApproval(approval, approved)}
         />

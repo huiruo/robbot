@@ -123,6 +123,8 @@ export interface MessageRecord {
   role: MessageRole;
   content: string;
   status: MessageStatus;
+  retrySourceMessageId: string | null;
+  retryPromptMessageId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -185,6 +187,7 @@ export interface RobbotApi {
     getStatus: () => Promise<HarnessRuntimeStatus>;
     listActiveRuns: () => Promise<Record<string, ActiveRunRef>>;
     runPrompt: (input: HarnessRunInput) => Promise<HarnessRunResult>;
+    retryMessage: (messageId: string) => Promise<HarnessRunResult>;
     cancel: (sessionId: string) => Promise<void>;
     approve: (sessionId: string, approvalId: string, approved: boolean) => Promise<void>;
     onLog: (listener: (entry: HarnessLogEntry) => void) => () => void;

@@ -164,14 +164,82 @@ export class HarnessService {
       status: 'completed',
     });
 
+    return this.startAssistantRun({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      sessionId: input.sessionId,
+      session,
+      workspacePath: workspace.rootPath,
+      prompt: normalizedPrompt,
+      runMode: normalizeRunMode(input.runMode, this.runtimeManager.resolveRuntime().config.protocol),
+      promptMessageId: userMessage.id,
+    });
+  }
+
+  async retryMessage(messageId: string): Promise<HarnessRunStartResult> {
+    this.log('main', 'retryMessage requested', { messageId });
+
+    const sourceMessage = this.options.messages.get(messageId);
+    if (sourceMessage.role !== 'assistant') {
+      throw new Error('Only assistant messages can be retried.');
+    }
+    if (!['failed', 'cancelled', 'interrupted'].includes(sourceMessage.status)) {
+      throw new Error('Only failed, cancelled, or interrupted assistant messages can be retried.');
+    }
+    if (this.activeRunBySessionId.has(sourceMessage.sessionId)) {
+      throw new Error('This session already has a running prompt.');
+    }
+
+    const session = this.options.sessions.getById(sourceMessage.sessionId);
+    if (!session.workspaceId) {
+      throw new Error('Cannot retry a message without a workspace.');
+    }
+
+    const messages = this.options.messages.list(sourceMessage.sessionId);
+    const sourceIndex = messages.findIndex((message) => message.id === sourceMessage.id);
+    const promptMessage = sourceIndex > 0
+      ? [...messages.slice(0, sourceIndex)].reverse().find((message) => message.role === 'user')
+      : undefined;
+    const prompt = promptMessage?.content.trim();
+    if (!prompt || !promptMessage) {
+      throw new Error('Cannot retry: no previous user message was found.');
+    }
+
+    const workspace = this.options.workspaces.get(session.accountId, session.workspaceId);
+    return this.startAssistantRun({
+      accountId: session.accountId,
+      workspaceId: workspace.id,
+      sessionId: session.id,
+      session,
+      workspacePath: workspace.rootPath,
+      prompt,
+      runMode: this.runtimeManager.resolveRuntime().config.protocol,
+      promptMessageId: promptMessage.id,
+      retrySourceMessageId: sourceMessage.id,
+    });
+  }
+
+  private async startAssistantRun(input: {
+    accountId: string;
+    workspaceId: string;
+    sessionId: string;
+    session: { harnessSessionId: string | null; harnessInstanceId: string | null };
+    workspacePath: string;
+    prompt: string;
+    runMode: HarnessRunMode;
+    promptMessageId: string;
+    retrySourceMessageId?: string;
+  }): Promise<HarnessRunStartResult> {
     const runMode = normalizeRunMode(input.runMode, this.runtimeManager.resolveRuntime().config.protocol);
     const capabilities = this.harness.capabilities(runMode);
-    const harnessSessionId = await this.resolveHarnessSession(input.accountId, input.sessionId, session, workspace.rootPath, runMode);
+    const harnessSessionId = await this.resolveHarnessSession(input.accountId, input.sessionId, input.session, input.workspacePath, runMode);
     const assistantMessage = this.options.messages.create({
       sessionId: input.sessionId,
       role: 'assistant',
       content: '',
       status: 'streaming',
+      retrySourceMessageId: input.retrySourceMessageId,
+      retryPromptMessageId: input.retrySourceMessageId ? input.promptMessageId : null,
     });
     const runId = randomUUID();
     const now = Date.now();
@@ -207,14 +275,19 @@ export class HarnessService {
       messageId: assistantMessage.id,
       harnessSessionId,
       type: 'run.started',
-      payload: { userMessageId: userMessage.id, runMode, capabilities },
+      payload: {
+        userMessageId: input.promptMessageId,
+        retrySourceMessageId: input.retrySourceMessageId,
+        runMode,
+        capabilities,
+      },
     });
 
-    void this.executeRun(activeRun, normalizedPrompt);
+    void this.executeRun(activeRun, input.prompt);
 
     return {
       runId,
-      userMessageId: userMessage.id,
+      userMessageId: input.promptMessageId,
       assistantMessageId: assistantMessage.id,
       harnessSessionId,
       runMode,

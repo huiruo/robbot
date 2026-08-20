@@ -76,6 +76,14 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS messages_session_created_idx ON messages(session_id, created_at);
     `,
   },
+  {
+    id: '0003_message_retry_source',
+    sql: `
+      ALTER TABLE messages ADD COLUMN retry_source_message_id TEXT;
+      ALTER TABLE messages ADD COLUMN retry_prompt_message_id TEXT;
+      CREATE INDEX IF NOT EXISTS messages_retry_source_idx ON messages(retry_source_message_id);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

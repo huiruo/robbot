@@ -17,6 +17,7 @@ export function ChatPane(props: {
   onPromptChange(value: string): void
   onSend(): void
   onCancel(): void
+  onRetry(message: MessageRecord): void
   onCreateSession(): void
   onApprovalDecision(approval: ApprovalState, approved: boolean): void
 }) {
@@ -65,7 +66,12 @@ export function ChatPane(props: {
             </div>
           ) : null}
           {props.messages.map((message) => (
-            <ChatMessageCard key={message.id} message={message} />
+            <ChatMessageCard
+              key={message.id}
+              message={message}
+              retryDisabled={Boolean(props.activeRun)}
+              onRetry={props.onRetry}
+            />
           ))}
           {props.approval ? (
             <ApprovalCard approval={props.approval} onDecision={(approved) => props.onApprovalDecision(props.approval!, approved)} />

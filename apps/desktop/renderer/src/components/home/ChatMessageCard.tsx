@@ -1,7 +1,13 @@
 import type { MessageRecord } from '../../robbot-api'
+import { RotateCcw } from 'lucide-react'
 
-export function ChatMessageCard({ message }: { message: MessageRecord }) {
+export function ChatMessageCard({ message, retryDisabled, onRetry }: {
+  message: MessageRecord
+  retryDisabled?: boolean
+  onRetry?: (message: MessageRecord) => void
+}) {
   const isUser = message.role === 'user'
+  const canRetry = !isUser && (message.status === 'failed' || message.status === 'cancelled' || message.status === 'interrupted')
 
   return (
     <article className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -15,6 +21,19 @@ export function ChatMessageCard({ message }: { message: MessageRecord }) {
           {message.status !== 'completed' ? ` · ${message.status}` : ''}
         </div>
         <pre className="m-0 whitespace-pre-wrap break-words font-sans">{message.content}</pre>
+        {canRetry ? (
+          <div className="mt-3 flex justify-end">
+            <button
+              className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={retryDisabled}
+              onClick={() => onRetry?.(message)}
+              title="Retry this prompt"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Retry
+            </button>
+          </div>
+        ) : null}
       </div>
     </article>
   )

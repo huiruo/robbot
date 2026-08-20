@@ -58,6 +58,8 @@ export interface MessageRecord {
   role: MessageRole;
   content: string;
   status: MessageStatus;
+  retrySourceMessageId: string | null;
+  retryPromptMessageId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -325,6 +327,17 @@ export class SessionRepository {
       `Unknown session: ${sessionId}`,
     );
   }
+
+  getById(sessionId: string): SessionRecord {
+    return requireRecord(
+      this.db
+        .select()
+        .from(sessions)
+        .where(and(eq(sessions.id, sessionId), isNull(sessions.deletedAt)))
+        .get(),
+      `Unknown session: ${sessionId}`,
+    );
+  }
 }
 
 export class MessageRepository {
@@ -340,6 +353,8 @@ export class MessageRepository {
     role: MessageRole;
     content: string;
     status?: MessageStatus;
+    retrySourceMessageId?: string | null;
+    retryPromptMessageId?: string | null;
     createdAt?: number;
   }): MessageRecord {
     const now = input.createdAt ?? Date.now();
@@ -353,6 +368,8 @@ export class MessageRepository {
         role: input.role,
         content: input.content,
         status: input.status ?? 'completed',
+        retrySourceMessageId: input.retrySourceMessageId ?? null,
+        retryPromptMessageId: input.retryPromptMessageId ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -404,6 +421,16 @@ export class MessageRepository {
 
   get(messageId: string): MessageRecord {
     return requireRecord(this.db.select().from(messages).where(eq(messages.id, messageId)).get(), `Unknown message: ${messageId}`);
+  }
+
+  findPreviousUserMessage(sessionId: string, beforeCreatedAt: number): MessageRecord | null {
+    return this.db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.sessionId, sessionId), eq(messages.role, 'user')))
+      .orderBy(desc(messages.createdAt))
+      .all()
+      .find((message) => message.createdAt < beforeCreatedAt) ?? null;
   }
 }
 

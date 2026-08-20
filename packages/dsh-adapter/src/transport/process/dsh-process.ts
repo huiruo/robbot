@@ -38,12 +38,20 @@ export class DshProcess {
       args,
     });
 
+    const robbotEnv = readRobbotEnvFromDshRoot(this.cwd);
     this.child = spawn(nodeExecutable, args, {
       cwd: this.cwd,
       stdio: 'pipe',
       env: {
         ...process.env,
-        DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? readDeepSeekApiKeyFromRobbotEnv(this.cwd) ?? 'sk-dummy-for-boot',
+        ROBBOT_OPENAI_PROVIDER: process.env.ROBBOT_OPENAI_PROVIDER ?? robbotEnv.ROBBOT_OPENAI_PROVIDER,
+        ROBBOT_OPENAI_MODEL: process.env.ROBBOT_OPENAI_MODEL ?? robbotEnv.ROBBOT_OPENAI_MODEL,
+        ROBBOT_DEEPSEEK_MODEL: process.env.ROBBOT_DEEPSEEK_MODEL ?? robbotEnv.ROBBOT_DEEPSEEK_MODEL,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? robbotEnv.OPENAI_API_KEY,
+        OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? robbotEnv.OPENAI_BASE_URL,
+        DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? robbotEnv.DEEPSEEK_API_KEY ?? 'sk-dummy-for-boot',
+        DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL ?? robbotEnv.DEEPSEEK_BASE_URL,
+        DSH_MODEL: process.env.DSH_MODEL ?? robbotEnv.DSH_MODEL,
         DSH_PERMISSION_MODE: process.env.DSH_PERMISSION_MODE ?? 'workspace-write',
         DSH_CORDIS_CONFIG: this.configPath,
         TSX_TSCONFIG_PATH: path.join(this.cwd, 'tsconfig.json'),
@@ -87,6 +95,10 @@ export class DshProcess {
     this.child = undefined;
     this.channel = undefined;
   }
+}
+
+export function readRobbotEnvValueFromDshRoot(dshRoot: string, name: string): string | undefined {
+  return readRobbotEnvFromDshRoot(dshRoot)[name];
 }
 
 function resolveNodeExecutable(): string {
@@ -137,15 +149,16 @@ function isElectronRuntime(): boolean {
   return Boolean(process.versions.electron);
 }
 
-function readDeepSeekApiKeyFromRobbotEnv(dshRoot: string): string | undefined {
+function readRobbotEnvFromDshRoot(dshRoot: string): Record<string, string> {
   const envPath = path.resolve(dshRoot, '../..', '.env');
   let contents: string;
   try {
     contents = readFileSync(envPath, 'utf8');
   } catch {
-    return undefined;
+    return {};
   }
 
+  const env: Record<string, string> = {};
   for (const rawLine of contents.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) {
@@ -153,15 +166,18 @@ function readDeepSeekApiKeyFromRobbotEnv(dshRoot: string): string | undefined {
     }
 
     const separator = line.indexOf('=');
-    if (separator < 0 || line.slice(0, separator).trim() !== 'DEEPSEEK_API_KEY') {
+    if (separator < 0) {
       continue;
     }
 
+    const name = line.slice(0, separator).trim();
     const value = unquoteEnvValue(line.slice(separator + 1).trim());
-    return value.length > 0 ? value : undefined;
+    if (name && value.length > 0) {
+      env[name] = value;
+    }
   }
 
-  return undefined;
+  return env;
 }
 
 function unquoteEnvValue(value: string): string {

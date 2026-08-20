@@ -149,3 +149,5 @@ vite.config.ts.timestamp-*
 .DS_Store
 
 docs-ignore/
+
+.robbot/

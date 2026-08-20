@@ -14,6 +14,17 @@
       - id: !!js process.env.DSH_MODEL ?? 'deepseek-v4-flash'
         contextWindow: !!js Number(process.env.DSH_CONTEXT_WINDOW ?? 1000000)
 
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      openai:
+        apiKeyEnv: OPENAI_API_KEY
+        baseURL: !!js process.env.OPENAI_BASE_URL
+        models:
+          - id: !!js process.env.DSH_MODEL ?? process.env.ROBBOT_OPENAI_MODEL ?? 'gpt-5.6-luna'
+            contextWindow: !!js Number(process.env.DSH_CONTEXT_WINDOW ?? 1000000)
+
 - id: subprocess
   name: '@deepseek-ai/dsh-subprocess-local'
 

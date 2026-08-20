@@ -33,6 +33,7 @@ export const accounts = sqliteTable(
       "apiUrl": "..."
     } 
     */
+    // openai | deepseek
     chatgptKey: text('chatgpt_key'),
     selectedAi: text('selected_ai'),
   },

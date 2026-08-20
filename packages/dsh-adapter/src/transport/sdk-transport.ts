@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { mapSdkNotificationToHarnessEvents } from '../mapper/sdk-event-mapper.js';
 import type { DshRuntimeManager } from '../runtime/dsh-runtime-manager.js';
+import { readRobbotEnvValueFromDshRoot } from './process/dsh-process.js';
 import type { StdioChannel } from './process/stdio-channel.js';
 import type { HarnessTransport } from './transport.js';
 
@@ -76,8 +77,10 @@ export class SdkTransport implements HarnessTransport {
 
   async createSession(input: CreateSessionInput): Promise<HarnessSession> {
     const id = randomUUID();
-    const processKey = `workspace:${input.workspacePath}`;
-    const channel = await this.ensureInitialized(processKey, input.workspacePath);
+    const runtime = this.runtimeManager.resolveRuntime();
+    const route = resolveSdkRoute(runtime.root, runtime.config.provider, runtime.config.model);
+    const processKey = `workspace:${input.workspacePath}:provider:${route.provider}:model:${route.model}:base:${route.baseURL ?? ''}`;
+    const channel = await this.ensureInitialized(processKey, input.workspacePath, route);
     this.sessions.set(id, {
       id,
       workspacePath: input.workspacePath,
@@ -177,22 +180,21 @@ export class SdkTransport implements HarnessTransport {
     this.runStates.clear();
   }
 
-  private async ensureInitialized(processKey: string, workspacePath: string): Promise<StdioChannel> {
+  private async ensureInitialized(processKey: string, workspacePath: string, route: SdkRoute): Promise<StdioChannel> {
     const existing = this.initializedByProcessKey.get(processKey);
     if (existing) {
       return existing;
     }
 
-    const initialized = this.connectAndInitialize(processKey, workspacePath);
+    const initialized = this.connectAndInitialize(processKey, workspacePath, route);
     this.initializedByProcessKey.set(processKey, initialized);
     return initialized;
   }
 
-  private async connectAndInitialize(processKey: string, workspacePath: string): Promise<StdioChannel> {
-    const runtime = this.runtimeManager.resolveRuntime();
+  private async connectAndInitialize(processKey: string, workspacePath: string, route: SdkRoute): Promise<StdioChannel> {
     const processHandle = await this.runtimeManager.start(processKey, 'sdk', {
       DSH_CWD: workspacePath,
-      DSH_MODEL: runtime.config.model ?? 'deepseek-v4-flash',
+      DSH_MODEL: route.model,
       DSH_SESSION_ROOT: `${workspacePath}/.robbot/dsh-sessions`,
     });
     const channel = processHandle.getChannel();
@@ -201,8 +203,8 @@ export class SdkTransport implements HarnessTransport {
     channel.onMessage((message) => this.handleMessage(processKey, message));
     await this.request(processKey, 'initialize', {
       cwd: workspacePath,
-      provider: runtime.config.provider ?? 'deepseek-official',
-      model: runtime.config.model ?? 'deepseek-v4-flash',
+      provider: route.provider,
+      model: route.model,
     });
     return channel;
   }
@@ -336,6 +338,52 @@ export class SdkTransport implements HarnessTransport {
 function notificationSessionId(params: unknown): string | undefined {
   const value = asRecord(params)?.sessionId;
   return typeof value === 'string' ? value : undefined;
+}
+
+interface SdkRoute {
+  provider: string;
+  model: string;
+  baseURL?: string;
+}
+
+function resolveSdkRoute(dshRoot: string, fallbackProvider: string | undefined, fallbackModel: string | undefined): SdkRoute {
+  const provider = normalizeProvider(envValue(dshRoot, 'ROBBOT_OPENAI_PROVIDER') ?? fallbackProvider ?? 'deepseek-official');
+  const model = modelForProvider(dshRoot, provider, fallbackModel);
+  const baseURL = provider === 'openai' ? envValue(dshRoot, 'OPENAI_BASE_URL') : envValue(dshRoot, 'DEEPSEEK_BASE_URL');
+
+  return { provider, model, baseURL };
+}
+
+function envValue(dshRoot: string, name: string): string | undefined {
+  return process.env[name] ?? readRobbotEnvValueFromDshRoot(dshRoot, name);
+}
+
+function normalizeProvider(value: string): string {
+  if (value === 'deepseek') {
+    return 'deepseek-official';
+  }
+  if (value === 'chatgpt') {
+    return 'openai';
+  }
+  return value;
+}
+
+function defaultModelForProvider(provider: string): string {
+  return provider === 'openai' ? 'gpt-5.6-luna' : 'deepseek-v4-flash';
+}
+
+function modelForProvider(dshRoot: string, provider: string, fallbackModel: string | undefined): string {
+  if (provider === 'openai') {
+    return envValue(dshRoot, 'ROBBOT_OPENAI_MODEL')
+      ?? envValue(dshRoot, 'DSH_MODEL')
+      ?? fallbackModel
+      ?? defaultModelForProvider(provider);
+  }
+
+  return envValue(dshRoot, 'ROBBOT_DEEPSEEK_MODEL')
+    ?? envValue(dshRoot, 'DSH_MODEL')
+    ?? fallbackModel
+    ?? defaultModelForProvider(provider);
 }
 
 function isInboxReceipt(event: Record<string, unknown> | undefined, messageId: string | undefined): boolean {

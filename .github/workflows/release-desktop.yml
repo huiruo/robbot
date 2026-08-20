@@ -63,7 +63,9 @@ jobs:
         run: npm ci --prefix apps/desktop/renderer
 
       - name: Verify Electron dependency
-        run: pnpm --filter @robbot/desktop exec node -e "console.log(require.resolve('electron/package.json'))"
+        working-directory: apps/desktop
+        run: >-
+          node -e "console.log(require.resolve('electron/package.json', { paths: [process.cwd()] }))"
 
       - name: Publish draft GitHub Release
         run: pnpm --filter @robbot/desktop run publish

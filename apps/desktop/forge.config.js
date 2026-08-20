@@ -1,10 +1,12 @@
 const path = require('node:path');
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
+const electronVersion = require('./package.json').devDependencies.electron.replace(/^[^\d]*/, '');
 
 module.exports = {
   packagerConfig: {
     asar: true,
+    electronVersion,
     icon: path.resolve(__dirname, 'assets/icon'),
     ignore: [
       /^\/renderer\/node_modules(\/|$)/,

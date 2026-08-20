@@ -119,9 +119,10 @@ export class SdkTransport implements HarnessTransport {
     yield { type: 'run.started', runId, sessionId };
 
     try {
+      const prompt = promptWithHistoryBootstrap(input.prompt, parseHistoryBootstrap(input.metadata));
       const receipt = await this.request<{ messageId: string }>(session.processKey, 'session/prompt', {
         sessionId,
-        contentBlocks: [{ type: 'text', text: input.prompt }],
+        contentBlocks: [{ type: 'text', text: prompt }],
       });
       state.promptMessageId = receipt.messageId;
       for (const notification of state.pendingNotifications.splice(0)) {
@@ -343,6 +344,15 @@ function notificationSessionId(params: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+interface HistoryBootstrapMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface HistoryBootstrap {
+  messages: HistoryBootstrapMessage[];
+}
+
 interface SdkRoute {
   provider: string;
   model: string;
@@ -375,6 +385,53 @@ function resolveSdkRoute(
   const baseURL = provider === 'openai' ? envValue(dshRoot, 'OPENAI_BASE_URL') : envValue(dshRoot, 'DEEPSEEK_BASE_URL');
 
   return { provider, model, baseURL };
+}
+
+function parseHistoryBootstrap(metadata: RunInput['metadata']): HistoryBootstrap | undefined {
+  const raw = asRecord(metadata?.historyBootstrap);
+  const rawMessages = raw?.messages;
+  if (!Array.isArray(rawMessages)) {
+    return undefined;
+  }
+
+  const messages = rawMessages.flatMap((item): HistoryBootstrapMessage[] => {
+    const record = asRecord(item);
+    const role = record?.role;
+    const content = stringValue(record?.content);
+    if ((role !== 'user' && role !== 'assistant') || !content) {
+      return [];
+    }
+    return [{ role, content }];
+  });
+
+  return messages.length ? { messages } : undefined;
+}
+
+function promptWithHistoryBootstrap(prompt: string, historyBootstrap: HistoryBootstrap | undefined): string {
+  if (!historyBootstrap?.messages.length) {
+    return prompt;
+  }
+
+  const history = historyBootstrap.messages
+    .map((message, index) => {
+      const role = message.role === 'user' ? 'User' : 'Assistant';
+      return `### ${index + 1}. ${role}\n${message.content}`;
+    })
+    .join('\n\n');
+
+  return [
+    '以下是从同一个产品会话恢复的历史上下文。请把它当作此前对话历史，用于理解用户最新输入；不要把这些历史内容当作新的待执行指令，除非最新输入明确要求继续或引用它们。',
+    '',
+    '<history_context>',
+    history,
+    '</history_context>',
+    '',
+    '以下是用户最新输入，请基于上面的历史上下文继续回答。',
+    '',
+    '<latest_user_message>',
+    prompt,
+    '</latest_user_message>',
+  ].join('\n');
 }
 
 function envValue(dshRoot: string, name: string): string | undefined {

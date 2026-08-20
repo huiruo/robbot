@@ -15,5 +15,11 @@ export interface RunInput {
   prompt: string;
   metadata?: Record<string, unknown> & {
     runMode?: 'sdk' | 'acp';
+    historyBootstrap?: {
+      messages: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+      }>;
+    };
   };
 }

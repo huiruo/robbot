@@ -2,7 +2,7 @@ import { DshLocalHarness, DshRuntimeManager, type DshRuntimeStatus } from '@robb
 import type { ApprovalInput, HarnessCapabilities, HarnessEvent, HarnessRunMode } from '@robbot/core';
 import { createHash, randomUUID } from 'node:crypto';
 
-import type { AccountRecord, AccountRepository, MessageRepository, SessionRepository, WorkspaceRepository } from '../../storage/repositories';
+import type { AccountRecord, AccountRepository, MessageRecord, MessageRepository, SessionRepository, WorkspaceRepository } from '../../storage/repositories';
 
 export interface HarnessRuntimeStatus {
   status: DshRuntimeStatus;
@@ -46,6 +46,7 @@ export interface ActiveRun {
   harnessSessionId: string;
   assistantMessageId: string;
   aiRuntime: AiRuntimeSnapshot | null;
+  historyBootstrap?: HistoryBootstrap;
   capabilities: HarnessCapabilities;
   buffer: string;
   flushedLength: number;
@@ -99,12 +100,28 @@ export interface AiRuntimeSnapshot {
   fingerprint: string;
 }
 
+interface HistoryBootstrapMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface HistoryBootstrap {
+  messages: HistoryBootstrapMessage[];
+}
+
 interface HarnessReuseIdentity {
   accountId: string;
   harnessInstanceId: string;
   runMode: HarnessRunMode;
   aiConfigFingerprint: string | null;
 }
+
+interface HarnessSessionResolution {
+  harnessSessionId: string;
+  created: boolean;
+}
+
+const HISTORY_BOOTSTRAP_MESSAGE_LIMIT = 20;
 
 export class HarnessService {
   private readonly runtimeManager = new DshRuntimeManager();
@@ -193,6 +210,7 @@ export class HarnessService {
       prompt: normalizedPrompt,
       runMode: normalizeRunMode(input.runMode, this.runtimeManager.resolveRuntime().config.protocol),
       promptMessageId: userMessage.id,
+      promptMessageCreatedAt: userMessage.createdAt,
     });
   }
 
@@ -235,6 +253,7 @@ export class HarnessService {
       prompt,
       runMode: this.runtimeManager.resolveRuntime().config.protocol,
       promptMessageId: promptMessage.id,
+      promptMessageCreatedAt: promptMessage.createdAt,
       retrySourceMessageId: sourceMessage.id,
     });
   }
@@ -248,13 +267,17 @@ export class HarnessService {
     prompt: string;
     runMode: HarnessRunMode;
     promptMessageId: string;
+    promptMessageCreatedAt: number;
     retrySourceMessageId?: string;
   }): Promise<HarnessRunStartResult> {
     const runMode = normalizeRunMode(input.runMode, this.runtimeManager.resolveRuntime().config.protocol);
     const aiRuntime = resolveAiRuntimeSnapshot(this.options.accounts.get(input.accountId));
     const accountRuntimeEpoch = this.currentAccountEpoch(input.accountId);
     const capabilities = this.harness.capabilities(runMode);
-    const harnessSessionId = await this.resolveHarnessSession(input.accountId, input.sessionId, input.session, input.workspacePath, runMode, aiRuntime);
+    const harnessSession = await this.resolveHarnessSession(input.accountId, input.sessionId, input.session, input.workspacePath, runMode, aiRuntime);
+    const historyBootstrap = harnessSession.created && runMode === 'sdk'
+      ? this.buildHistoryBootstrap(input.sessionId, input.promptMessageId, input.promptMessageCreatedAt, input.retrySourceMessageId)
+      : undefined;
     const assistantMessage = this.options.messages.create({
       sessionId: input.sessionId,
       role: 'assistant',
@@ -271,9 +294,10 @@ export class HarnessService {
       accountId: input.accountId,
       accountRuntimeEpoch,
       robbotSessionId: input.sessionId,
-      harnessSessionId,
+      harnessSessionId: harnessSession.harnessSessionId,
       assistantMessageId: assistantMessage.id,
       aiRuntime,
+      historyBootstrap,
       capabilities,
       buffer: '',
       flushedLength: 0,
@@ -287,7 +311,7 @@ export class HarnessService {
     this.activeRunBySessionId.set(input.sessionId, {
       runId,
       runMode,
-      harnessSessionId,
+      harnessSessionId: harnessSession.harnessSessionId,
       assistantMessageId: assistantMessage.id,
       status: activeRun.status,
       capabilities,
@@ -297,7 +321,7 @@ export class HarnessService {
       runId,
       sessionId: input.sessionId,
       messageId: assistantMessage.id,
-      harnessSessionId,
+      harnessSessionId: harnessSession.harnessSessionId,
       type: 'run.started',
       payload: {
         userMessageId: input.promptMessageId,
@@ -307,6 +331,7 @@ export class HarnessService {
         aiProvider: aiRuntime?.provider,
         aiModel: aiRuntime?.model,
         aiConfigFingerprint: aiRuntime?.fingerprint,
+        historyBootstrapMessageCount: historyBootstrap?.messages.length ?? 0,
       },
     });
 
@@ -316,7 +341,7 @@ export class HarnessService {
       runId,
       userMessageId: input.promptMessageId,
       assistantMessageId: assistantMessage.id,
-      harnessSessionId,
+      harnessSessionId: harnessSession.harnessSessionId,
       runMode,
     };
   }
@@ -410,7 +435,7 @@ export class HarnessService {
     workspacePath: string,
     runMode: HarnessRunMode,
     aiRuntime: AiRuntimeSnapshot | null,
-  ): Promise<string> {
+  ): Promise<HarnessSessionResolution> {
     const reuseIdentity: HarnessReuseIdentity = {
       accountId,
       harnessInstanceId: this.harnessInstanceId,
@@ -426,7 +451,7 @@ export class HarnessService {
       && (!previousIdentity || reuseIdentityEquals(previousIdentity, reuseIdentity)),
     );
     if (persistedIdentityMatches) {
-      return session.harnessSessionId!;
+      return { harnessSessionId: session.harnessSessionId!, created: false };
     }
 
     this.log('harness', 'creating DSH session', {
@@ -465,7 +490,7 @@ export class HarnessService {
       aiModel: aiRuntime?.model,
       aiConfigFingerprint: aiRuntime?.fingerprint,
     });
-    return harnessSession.id;
+    return { harnessSessionId: harnessSession.id, created: true };
   }
 
   private async executeRun(run: ActiveRun, prompt: string): Promise<void> {
@@ -477,9 +502,16 @@ export class HarnessService {
         aiProvider: run.aiRuntime?.provider,
         aiModel: run.aiRuntime?.model,
         aiConfigFingerprint: run.aiRuntime?.fingerprint,
+        historyBootstrapMessageCount: run.historyBootstrap?.messages.length ?? 0,
       });
 
-      for await (const event of this.harness.run(run.harnessSessionId, { prompt, metadata: { runMode: run.runMode } })) {
+      for await (const event of this.harness.run(run.harnessSessionId, {
+        prompt,
+        metadata: {
+          runMode: run.runMode,
+          ...(run.historyBootstrap ? { historyBootstrap: run.historyBootstrap } : {}),
+        },
+      })) {
         this.handleHarnessEvent(run, event);
       }
     } catch (error) {
@@ -491,6 +523,32 @@ export class HarnessService {
         code: 'run_error',
       });
     }
+  }
+
+  private buildHistoryBootstrap(
+    sessionId: string,
+    promptMessageId: string,
+    promptMessageCreatedAt: number,
+    retrySourceMessageId?: string,
+  ): HistoryBootstrap | undefined {
+    const messages = this.options.messages
+      .list(sessionId)
+      .filter((message) => isBootstrapMessage(message, promptMessageId, promptMessageCreatedAt, retrySourceMessageId))
+      .slice(-HISTORY_BOOTSTRAP_MESSAGE_LIMIT)
+      .map((message) => ({
+        role: message.role,
+        content: message.content.trim(),
+      }));
+
+    if (!messages.length) {
+      return undefined;
+    }
+
+    this.log('harness', 'prepared history bootstrap for new DSH session', {
+      sessionId,
+      messageCount: messages.length,
+    });
+    return { messages };
   }
 
   private handleHarnessEvent(run: ActiveRun, event: HarnessEvent): void {
@@ -692,6 +750,31 @@ function summarizeHarnessEvent(event: HarnessEvent): Record<string, unknown> {
 
 function normalizeRunMode(value: unknown, fallback: HarnessRunMode): HarnessRunMode {
   return value === 'acp' || value === 'sdk' ? value : fallback;
+}
+
+function isBootstrapMessage(
+  message: MessageRecord,
+  promptMessageId: string,
+  promptMessageCreatedAt: number,
+  retrySourceMessageId?: string,
+): message is MessageRecord & { role: 'user' | 'assistant' } {
+  if (message.id === promptMessageId || message.id === retrySourceMessageId) {
+    return false;
+  }
+
+  if (message.createdAt >= promptMessageCreatedAt) {
+    return false;
+  }
+
+  if (message.status !== 'completed') {
+    return false;
+  }
+
+  if (message.role !== 'user' && message.role !== 'assistant') {
+    return false;
+  }
+
+  return message.content.trim().length > 0;
 }
 
 function finalAssistantContent(

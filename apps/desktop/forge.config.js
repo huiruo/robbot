@@ -63,6 +63,7 @@ function copyPackageDirectory(sourcePath, targetPath) {
   fsSync.mkdirSync(path.dirname(targetPath), { recursive: true });
   fsSync.cpSync(realSourcePath, targetPath, {
     recursive: true,
+    verbatimSymlinks: true,
     filter(source) {
       return source === realSourcePath || !path.relative(realSourcePath, source).split(path.sep).includes('node_modules');
     },
@@ -397,7 +398,14 @@ module.exports = {
   hooks: {
     async prePackage() {
       materializeRuntimeDependencies();
-      materializePackage('electron');
+      // Do not materialize Electron into appDir/node_modules here. Forge reads
+      // Electron from devDependencies; copying Electron.app mutates the dev
+      // bundle layout and breaks `npm run dev` after a release build.
+      // TODO: 
+      // 它会在 release:mac / make:mac 的 prePackage() 里把 pnpm store 里的 electron 复制覆盖到：
+      // apps/desktop/node_modules/electron
+      // 这会污染 dev 用的 Electron.app。污染后即使不跑你的 app，单独执行也会崩：
+      // materializePackage('electron');
       preparedDshRuntimeBundle = buildDshRuntimeBundle();
       preparedNodeExecutable = prepareNodeRuntime();
     },

@@ -28,8 +28,9 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - name: macOS
-            os: macos-latest
+          # TODO: macOS 暂时停用，恢复时取消下面三行注释。
+          # - name: macOS
+          #   os: macos-latest
           - name: Windows
             os: windows-2022
 
@@ -166,7 +167,22 @@ jobs:
         run: >-
           node -e "for (const pkg of ['better-sqlite3/package.json', 'node-addon-api/package.json']) console.log(require.resolve(pkg, { paths: [process.cwd()] }))"
 
-      - name: Publish draft GitHub Release
+      - name: Publish draft GitHub Release (macOS)
+        if: matrix.os == 'macos-latest'
         run: pnpm --filter @robbot/desktop run publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Windows installer
+        if: matrix.os == 'windows-2022'
+        run: pnpm --filter @robbot/desktop run release:win
+
+      - name: Upload Windows installer
+        if: matrix.os == 'windows-2022'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Robbot-windows-x64
+          if-no-files-found: error
+          path: |
+            apps/desktop/out/make/**/*.exe
+            apps/desktop/out/make/**/*.nupkg

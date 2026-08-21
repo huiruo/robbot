@@ -6,6 +6,7 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 const electronVersion = require('./package.json').devDependencies.electron.replace(/^[^\d]*/, '');
 let preparedDshRuntimeBundle;
 let preparedNodeExecutable;
+let createdElectronPackageLink = false;
 
 function packagePathParts(packageName) {
   return packageName.split('/');
@@ -122,6 +123,32 @@ function materializeRuntimeDependencies() {
   for (const packageName of Object.keys(packageJson.dependencies ?? {})) {
     materializePackage(packageName);
   }
+}
+
+function ensureElectronPackageLink() {
+  const targetPath = path.join(__dirname, 'node_modules', 'electron');
+
+  if (packageDirExists(targetPath)) {
+    return;
+  }
+
+  const sourcePath = resolvePackageDir('electron');
+  fsSync.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fsSync.symlinkSync(sourcePath, targetPath, process.platform === 'win32' ? 'junction' : 'dir');
+  createdElectronPackageLink = true;
+  process.once('exit', cleanupElectronPackageLink);
+  console.log(`[robbot:package] linked Electron package for Forge at ${targetPath}`);
+}
+
+function cleanupElectronPackageLink() {
+  if (!createdElectronPackageLink) {
+    return;
+  }
+
+  const targetPath = path.join(__dirname, 'node_modules', 'electron');
+  fsSync.unlinkSync(targetPath);
+  createdElectronPackageLink = false;
+  console.log(`[robbot:package] removed temporary Electron package link at ${targetPath}`);
 }
 
 function prepareElectronWinstallerVendor() {
@@ -397,20 +424,21 @@ function ensureGitignoreForAsar(buildPath, _electronVersion, _platform, _arch, c
 module.exports = {
   hooks: {
     async prePackage() {
+      // Electron Packager walks appDir/node_modules directly. With pnpm's
+      // hoisted layout, Node can resolve Electron from the workspace root,
+      // but Packager cannot. A link keeps the path visible without copying
+      // Electron.app into the development tree.
+      ensureElectronPackageLink();
       materializeRuntimeDependencies();
-      // Do not materialize Electron into appDir/node_modules here. Forge reads
-      // Electron from devDependencies; copying Electron.app mutates the dev
-      // bundle layout and breaks `npm run dev` after a release build.
-      // TODO: 
-      // 它会在 release:mac / make:mac 的 prePackage() 里把 pnpm store 里的 electron 复制覆盖到：
-      // apps/desktop/node_modules/electron
-      // 这会污染 dev 用的 Electron.app。污染后即使不跑你的 app，单独执行也会崩：
-      // materializePackage('electron');
       preparedDshRuntimeBundle = buildDshRuntimeBundle();
       preparedNodeExecutable = prepareNodeRuntime();
     },
     async postPackage(_forgeConfig, packageResult) {
-      copyRobbotRuntimeResources(packageResult.outputPaths);
+      try {
+        copyRobbotRuntimeResources(packageResult.outputPaths);
+      } finally {
+        cleanupElectronPackageLink();
+      }
     },
     async postMake(_forgeConfig, makeResults) {
       logArtifactSizeAudit(makeResults);

@@ -10,7 +10,7 @@ export interface ResolvedDshRuntime {
 
 export class DshRuntimeResolver {
   constructor(
-    private readonly appRoot = findRobbotRoot(process.cwd()),
+    private readonly appRoot = defaultRobbotRoot(),
     private readonly config: DshRuntimeConfig = loadRuntimeConfig(appRoot),
   ) {}
 
@@ -23,7 +23,8 @@ export class DshRuntimeResolver {
 
   isRuntimeCheckoutPresent(): boolean {
     const runtime = this.resolveRuntime();
-    return existsSync(path.join(runtime.root, 'package.json')) && existsSync(path.join(runtime.root, '.git'));
+    return existsSync(path.join(runtime.root, 'package.json'))
+      && (existsSync(path.join(runtime.root, '.git')) || existsSync(path.join(runtime.root, 'lib/bin.js')));
   }
 
   isRuntimeInstalled(): boolean {
@@ -55,4 +56,13 @@ function findRobbotRoot(start: string): string {
     }
     current = parent;
   }
+}
+
+function defaultRobbotRoot(): string {
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  if (resourcesPath && existsSync(path.join(resourcesPath, 'config/dsh-runtime.json'))) {
+    return resourcesPath;
+  }
+
+  return findRobbotRoot(process.cwd());
 }

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { app, net } from 'electron';
 import type { AccountRecord, AccountRepository } from '../../storage/repositories';
 
 export interface AuthUser {
@@ -104,9 +105,12 @@ export class AuthSessionService {
 async function remoteAuth(pathname: string, input: { email: string; password: string }): Promise<AuthResult<AuthResponse>> {
   const base = apiBaseUrl();
   try {
-    const response = await fetch(`${base}${pathname.replace(/^\//, '')}`, {
+    const response = await net.fetch(`${base}${pathname.replace(/^\//, '')}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://trading-front.pages.dev',
+      },
       body: JSON.stringify(input),
     });
     const payload = (await response.json().catch(() => null)) as AuthResult<AuthResponse> | null;
@@ -129,6 +133,7 @@ async function remoteAuth(pathname: string, input: { email: string; password: st
 function apiBaseUrl(): string {
   const configured = process.env.ROBBOT_API_URL
     ?? process.env.PUBLIC_API_URL
+    ?? envFileValue('ROBBOT_API_URL')
     ?? envFileValue('PUBLIC_API_URL')
     ?? 'http://localhost:3800';
   return `${configured.replace(/\/$/, '')}/`;
@@ -144,7 +149,12 @@ function envFileValue(name: string): string | undefined {
 
 function envCandidates(): string[] {
   const cwd = process.cwd();
+  const appPath = app.getAppPath();
+  const resourcesPath = process.resourcesPath;
   return [
+    path.join(appPath, '.env'),
+    path.join(appPath, 'renderer', '.env'),
+    path.join(resourcesPath, '.env'),
     path.join(cwd, 'renderer', '.env'),
     path.join(cwd, '.env'),
     path.resolve(cwd, '../../.env'),

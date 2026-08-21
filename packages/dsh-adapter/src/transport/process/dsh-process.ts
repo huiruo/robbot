@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { accessSync, constants, copyFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { accessSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { HarnessError } from '@robbot/core';
@@ -24,16 +24,21 @@ export class DshProcess {
     }
 
     const nodeExecutable = resolveNodeExecutable();
-    const bin = this.protocol === 'acp'
-      ? 'packages/examples/acp-demo/src/bin.ts'
-      : this.protocol === 'sdk'
-        ? 'packages/examples/jsonrpc-demo/src/bin.ts'
-        : 'apps/cli/src/bin.ts';
-    const args = this.protocol === 'sdk'
-      ? ['--import', 'tsx', bin, this.configPath]
+    const builtCli = isBuiltCliRuntime(this.cwd);
+    const bin = builtCli
+      ? 'lib/bin.js'
       : this.protocol === 'acp'
-        ? ['--import', 'tsx', bin, '--config', this.configPath]
-      : ['--import', 'tsx/esm', bin, 'web', '--host', '127.0.0.1', '--port', envPort(this.envOverrides)];
+        ? 'packages/examples/acp-demo/src/bin.ts'
+        : this.protocol === 'sdk'
+          ? 'packages/examples/jsonrpc-demo/src/bin.ts'
+          : 'apps/cli/src/bin.ts';
+    const args = builtCli
+      ? builtCliArgs(this.protocol, bin, this.configPath, this.envOverrides)
+      : this.protocol === 'sdk'
+        ? ['--import', 'tsx', bin, this.configPath]
+        : this.protocol === 'acp'
+          ? ['--import', 'tsx', bin, '--config', this.configPath]
+          : ['--import', 'tsx/esm', bin, 'web', '--host', '127.0.0.1', '--port', envPort(this.envOverrides)];
     console.info('[robbot:dsh-process] starting DSH process', {
       cwd: this.cwd,
       protocol: this.protocol,
@@ -45,7 +50,7 @@ export class DshProcess {
     // Reading Robbot's .env here is intentionally retained only as a local-development
     // fallback for adapter-level runs that do not provide metadata.aiRuntime.
     const robbotEnv = readRobbotEnvFromDshRoot(this.cwd);
-    const launchEnv = {
+    const launchEnv: Record<string, string | undefined> = {
       ...process.env,
       ROBBOT_OPENAI_PROVIDER: process.env.ROBBOT_OPENAI_PROVIDER ?? robbotEnv.ROBBOT_OPENAI_PROVIDER,
       ROBBOT_OPENAI_MODEL: process.env.ROBBOT_OPENAI_MODEL ?? robbotEnv.ROBBOT_OPENAI_MODEL,
@@ -60,6 +65,9 @@ export class DshProcess {
       TSX_TSCONFIG_PATH: path.join(this.cwd, 'tsconfig.json'),
       ...this.envOverrides,
     };
+    if (shouldRunElectronAsNode(nodeExecutable)) {
+      launchEnv.ELECTRON_RUN_AS_NODE = '1';
+    }
     const dshHome = (launchEnv as Record<string, string | undefined>).DSH_HOME;
     if (this.protocol === 'web' && dshHome) {
       const patchPath = path.resolve(this.cwd, this.configPath);
@@ -166,13 +174,14 @@ export function readRobbotEnvValueFromDshRoot(dshRoot: string, name: string): st
 }
 
 function resolveNodeExecutable(): string {
-  if (!isElectronRuntime()) {
+  if (!isElectronRuntime() || !isPackagedDshRuntime()) {
     return process.execPath;
   }
 
   for (const candidate of [
     process.env.ROBBOT_NODE_EXECUTABLE,
     process.env.NODE_BINARY,
+    packagedNodeExecutable(),
     resolveNodeFromPath(),
     '/opt/homebrew/bin/node',
     '/usr/local/bin/node',
@@ -187,6 +196,24 @@ function resolveNodeExecutable(): string {
     'Unable to find a Node.js executable for starting DSH from Electron. Set ROBBOT_NODE_EXECUTABLE=/absolute/path/to/node.',
     'transport_error',
   );
+}
+
+function packagedNodeExecutable(): string | undefined {
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  if (!resourcesPath) {
+    return undefined;
+  }
+
+  return path.join(resourcesPath, 'bin', process.platform === 'win32' ? 'node.exe' : 'node');
+}
+
+function isPackagedDshRuntime(): boolean {
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  return Boolean(resourcesPath && existsSync(path.join(resourcesPath, 'dsh-runtime', 'lib', 'bin.js')));
+}
+
+function shouldRunElectronAsNode(nodeExecutable: string): boolean {
+  return isElectronRuntime() && path.resolve(nodeExecutable) === path.resolve(process.execPath);
 }
 
 function resolveNodeFromPath(): string | undefined {
@@ -211,6 +238,30 @@ function isExecutableFile(candidate: string): boolean {
 
 function isElectronRuntime(): boolean {
   return Boolean(process.versions.electron);
+}
+
+function isBuiltCliRuntime(cwd: string): boolean {
+  try {
+    accessSync(path.join(cwd, 'lib/bin.js'), constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function builtCliArgs(
+  protocol: DshProcessProtocol,
+  bin: string,
+  configPath: string,
+  envOverrides: Record<string, string | undefined>,
+): string[] {
+  if (protocol === 'web') {
+    return [bin, 'web', '--host', '127.0.0.1', '--port', envPort(envOverrides)];
+  }
+  if (protocol === 'sdk') {
+    return [bin, configPath];
+  }
+  return [bin, '--config', configPath];
 }
 
 function envPort(env: Record<string, string | undefined>): string {

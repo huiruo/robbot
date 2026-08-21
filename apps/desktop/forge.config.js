@@ -1,8 +1,10 @@
 const path = require('node:path');
 const fsSync = require('node:fs');
+const { spawnSync } = require('node:child_process');
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 const electronVersion = require('./package.json').devDependencies.electron.replace(/^[^\d]*/, '');
+let preparedDshRuntimeBundle;
 
 function packagePathParts(packageName) {
   return packageName.split('/');
@@ -134,11 +136,174 @@ function prepareElectronWinstallerVendor() {
   }
 }
 
+function copyDirectory(sourcePath, targetPath, options = {}) {
+  const realSourcePath = fsSync.realpathSync(sourcePath);
+  const excludeNames = new Set(options.excludeNames ?? []);
+
+  fsSync.rmSync(targetPath, { force: true, recursive: true });
+  fsSync.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fsSync.cpSync(realSourcePath, targetPath, {
+    dereference: options.dereference === true,
+    recursive: true,
+    verbatimSymlinks: options.verbatimSymlinks === true,
+    filter(source) {
+      if (source === realSourcePath) {
+        return true;
+      }
+
+      return !path.relative(realSourcePath, source).split(path.sep).some(part => excludeNames.has(part));
+    },
+  });
+}
+
+function materializeExternalSymlinks(rootPath) {
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const pending = [];
+
+    function collect(currentPath) {
+      for (const entry of fsSync.readdirSync(currentPath, { withFileTypes: true })) {
+        const absolutePath = path.join(currentPath, entry.name);
+        if (entry.isSymbolicLink()) {
+          const realPath = fsSync.realpathSync(absolutePath);
+          if (!realPath.startsWith(`${rootPath}${path.sep}`)) {
+            pending.push({ absolutePath, realPath });
+          }
+          continue;
+        }
+        if (entry.isDirectory()) {
+          collect(absolutePath);
+        }
+      }
+    }
+
+    collect(rootPath);
+    for (const { absolutePath, realPath } of pending) {
+      fsSync.rmSync(absolutePath, { force: true, recursive: true });
+      fsSync.mkdirSync(path.dirname(absolutePath), { recursive: true });
+      const stat = fsSync.statSync(realPath);
+      if (stat.isDirectory()) {
+        fsSync.cpSync(realPath, absolutePath, {
+          recursive: true,
+          verbatimSymlinks: true,
+        });
+      } else {
+        fsSync.copyFileSync(realPath, absolutePath);
+      }
+      changed = true;
+    }
+  }
+}
+
+function resourceDirsForPackageOutput(outputPath) {
+  if (process.platform === 'darwin') {
+    const appPaths = outputPath.endsWith('.app')
+      ? [outputPath]
+      : fsSync.readdirSync(outputPath)
+          .filter(entry => entry.endsWith('.app'))
+          .map(entry => path.join(outputPath, entry));
+
+    return appPaths.map(appPath => path.join(appPath, 'Contents', 'Resources'));
+  }
+
+  return [path.join(outputPath, 'resources')];
+}
+
+function copyRobbotRuntimeResources(outputPaths) {
+  const repoRoot = path.resolve(__dirname, '../..');
+  const configSource = path.join(repoRoot, 'config');
+  const dshRuntimeSource = preparedDshRuntimeBundle ?? buildDshRuntimeBundle();
+  const nodeExecutable = process.execPath;
+
+  for (const outputPath of outputPaths) {
+    for (const resourceDir of resourceDirsForPackageOutput(outputPath)) {
+      console.log(`[robbot:package] copying Robbot config to ${path.join(resourceDir, 'config')}`);
+      copyRobbotConfig(configSource, path.join(resourceDir, 'config'));
+      console.log(`[robbot:package] copying DSH runtime bundle to ${path.join(resourceDir, 'dsh-runtime')}`);
+      const packagedDshRuntime = path.join(resourceDir, 'dsh-runtime');
+      copyDirectory(dshRuntimeSource, packagedDshRuntime, { verbatimSymlinks: true });
+      console.log('[robbot:package] DSH runtime bundle copied');
+      const nodeTarget = path.join(resourceDir, 'bin', process.platform === 'win32' ? 'node.exe' : 'node');
+      console.log(`[robbot:package] copying Node runtime to ${nodeTarget}`);
+      fsSync.mkdirSync(path.dirname(nodeTarget), { recursive: true });
+      fsSync.copyFileSync(nodeExecutable, nodeTarget);
+      fsSync.chmodSync(nodeTarget, 0o755);
+    }
+  }
+}
+
+function buildDshRuntimeBundle() {
+  const runtimePath = path.join(__dirname, '.runtime', 'dsh');
+  if (fsSync.existsSync(path.join(runtimePath, 'package.json')) && fsSync.existsSync(path.join(runtimePath, 'lib', 'bin.js')) && isCurrentDshRuntimeBundle(runtimePath)) {
+    console.log(`[robbot:package] reusing DSH runtime bundle at ${runtimePath}`);
+    materializeExternalSymlinks(runtimePath);
+    return runtimePath;
+  }
+
+  console.log(`[robbot:package] building DSH runtime bundle at ${runtimePath}`);
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'scripts', 'build-dsh-runtime.mjs'), runtimePath], {
+    cwd: __dirname,
+    env: process.env,
+    stdio: 'inherit',
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(`build-dsh-runtime.mjs exited with ${String(result.status)}`);
+  }
+
+  console.log('[robbot:package] DSH runtime bundle built');
+  materializeExternalSymlinks(runtimePath);
+  return runtimePath;
+}
+
+function isCurrentDshRuntimeBundle(runtimePath) {
+  try {
+    const marker = JSON.parse(fsSync.readFileSync(path.join(runtimePath, 'robbot-runtime.json'), 'utf8'));
+    return marker?.kind === 'robbot-dsh-runtime' && marker?.layoutVersion === 2;
+  } catch {
+    return false;
+  }
+}
+
+function copyRobbotConfig(sourcePath, targetPath) {
+  copyDirectory(sourcePath, targetPath);
+  const runtimeConfigPath = path.join(targetPath, 'dsh-runtime.json');
+  const runtimeConfig = JSON.parse(fsSync.readFileSync(runtimeConfigPath, 'utf8'));
+  fsSync.writeFileSync(runtimeConfigPath, `${JSON.stringify({
+    ...runtimeConfig,
+    submodule: 'dsh-runtime',
+    buildRequired: false,
+    configPath: '../config/dsh-sdk-flash.cordis.yml',
+  }, null, 2)}\n`);
+}
+
+function ensureGitignoreForAsar(buildPath, _electronVersion, _platform, _arch, callback) {
+  const gitignorePath = path.join(buildPath, '.gitignore');
+
+  try {
+    if (!fsSync.existsSync(gitignorePath)) {
+      fsSync.writeFileSync(gitignorePath, '');
+    }
+    callback();
+  } catch (error) {
+    callback(error);
+  }
+}
+
 module.exports = {
   hooks: {
     async prePackage() {
       materializeRuntimeDependencies();
       materializePackage('electron');
+      preparedDshRuntimeBundle = buildDshRuntimeBundle();
+    },
+    async postPackage(_forgeConfig, packageResult) {
+      copyRobbotRuntimeResources(packageResult.outputPaths);
     },
     async preMake() {
       if (process.platform === 'win32') {
@@ -148,6 +313,7 @@ module.exports = {
   },
   packagerConfig: {
     asar: true,
+    beforeAsar: [ensureGitignoreForAsar],
     electronVersion,
     executableName: 'Robbot',
     icon: path.resolve(__dirname, 'assets/icon'),
@@ -165,6 +331,10 @@ module.exports = {
       /^\/renderer\/vite\.config\.ts$/,
       /^\/electron\/.*\.ts$/,
       /^\/tsconfig\.electron\.json$/,
+      /^\/\.runtime(\/|$)/,
+      /^\/node_modules\/electron(\/|$)/,
+      /^\/node_modules\/@electron(\/|$)/,
+      /^\/node_modules\/@electron-internal(\/|$)/,
     ],
   },
   rebuildConfig: {},

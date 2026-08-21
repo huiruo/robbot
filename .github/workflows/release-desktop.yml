@@ -177,9 +177,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Windows installer
+      - name: Publish Windows Release
         if: matrix.os == 'windows-2022'
-        run: pnpm --filter @robbot/desktop run release:win
+        run: pnpm --filter @robbot/desktop run publish:win
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Windows installer
         if: matrix.os == 'windows-2022'
@@ -187,6 +189,4 @@ jobs:
         with:
           name: Robbot-windows-x64
           if-no-files-found: error
-          path: |
-            apps/desktop/out/make/**/*.exe
-            apps/desktop/out/make/**/*.nupkg
+          path: apps/desktop/out/make/**/*.exe

@@ -21,6 +21,7 @@
     "make:win": "node scripts/verify-target.mjs win32 x64 && npm run build && node scripts/forge-runtime-package.mjs make --platform win32 --arch x64",
     "release:mac": "npm run make:mac",
     "release:win": "npm run make:win",
+    "publish:win": "node scripts/verify-target.mjs win32 x64 && npm run build && node scripts/forge-runtime-package.mjs publish --platform win32 --arch x64",
     "publish": "npm run build && node scripts/forge-runtime-package.mjs publish"
   },
   "author": "huiruo",

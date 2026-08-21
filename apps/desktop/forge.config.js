@@ -172,8 +172,15 @@ function cleanupElectronPackageLinks() {
   }
 
   for (const targetPath of [...createdElectronPackageLinks].reverse()) {
-    if (fsSync.existsSync(targetPath) || fsSync.lstatSync(targetPath, { throwIfNoEntry: false })) {
-      fsSync.unlinkSync(targetPath);
+    try {
+      fsSync.rmSync(targetPath, {
+        force: true,
+        maxRetries: process.platform === 'win32' ? 3 : 0,
+        recursive: true,
+        retryDelay: 100,
+      });
+    } catch (error) {
+      console.warn(`[robbot:package] unable to remove temporary package link ${targetPath}: ${error.message}`);
     }
   }
 

@@ -1,10 +1,9 @@
 import { Alert, Box, Button, IconButton, InputAdornment, Paper, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
-import { saveAuth } from '../../auth'
-import { authLogin, authRegister } from '../../services/api'
+import type { AuthUser } from '../../robbot-api'
 
-export function LoginPage(props: { onDone: (userId: string) => void }) {
+export function LoginPage(props: { onDone: (user: AuthUser) => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -24,15 +23,16 @@ export function LoginPage(props: { onDone: (userId: string) => void }) {
 
     setLoading(true)
     setError('')
-    const result = mode === 'login' ? await authLogin({ email: normalizedEmail, password }) : await authRegister({ email: normalizedEmail, password })
-    setLoading(false)
-    if (result.code !== 1 || !result.data?.token || !result.data?.exp || !result.data?.user?.id) {
-      setError(result.msg || (mode === 'login' ? '登录失败' : '注册失败'))
-      return
+    try {
+      const user = mode === 'login'
+        ? await window.robbot.auth.login({ email: normalizedEmail, password })
+        : await window.robbot.auth.register({ email: normalizedEmail, password })
+      props.onDone(user)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : mode === 'login' ? '登录失败' : '注册失败')
+    } finally {
+      setLoading(false)
     }
-    const user = saveAuth(result.data)
-    await window.robbot.account.upsertCurrent({ id: user.id, email: user.email, username: user.username, avatar: user.avatar })
-    props.onDone(user.id)
   }
 
   const passwordAdornment = (visible: boolean, toggle: () => void) => (

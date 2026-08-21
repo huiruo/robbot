@@ -33,6 +33,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       preload: getPreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
     },
   });
 

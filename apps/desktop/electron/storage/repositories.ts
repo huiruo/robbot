@@ -158,6 +158,7 @@ export class AccountRepository {
     this.db.update(accounts).set({ selectedAi, updatedAt: Date.now() }).where(eq(accounts.id, accountId)).run();
     return this.get(accountId);
   }
+
 }
 
 export class WorkspaceRepository {
@@ -522,6 +523,7 @@ function normalizeWorkspacePath(rootPath: string): string {
 function stringifyMetadata(metadata: unknown): string | null {
   return metadata === undefined ? null : JSON.stringify(metadata);
 }
+
 
 function requireRecord<T>(record: T | undefined, message: string): T {
   if (!record) {

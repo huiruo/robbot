@@ -1,3 +1,5 @@
+import type React from 'react';
+
 export interface HarnessRuntimeStatus {
   status: 'missing' | 'not_installed' | 'ready' | 'running';
   runtimeRoot: string;
@@ -32,6 +34,20 @@ export interface ActiveRunRef {
   assistantMessageId: string;
   status: ActiveRunStatus;
   capabilities: HarnessCapabilities;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  username: string;
+  avatar?: string | null;
+}
+
+export interface DshWebViewTarget {
+  url: string;
+  partition: string;
+  accountHash: string;
+  fingerprint: string;
 }
 
 export interface HarnessRunInput {
@@ -187,12 +203,17 @@ export interface RobbotApi {
     electron: string;
     node: string;
   };
+  auth: {
+    getCurrent: () => Promise<AuthUser | null>;
+    login: (input: { email: string; password: string }) => Promise<AuthUser>;
+    register: (input: { email: string; password: string }) => Promise<AuthUser>;
+    logout: () => Promise<void>;
+  };
   account: {
-    upsertCurrent: (input: UpsertAccountInput) => Promise<AccountRecord>;
-    get: (accountId: string) => Promise<AccountRecord>;
-    updateAiConfig: (accountId: string, field: 'deepseek' | 'openai', value: unknown) => Promise<AccountRecord>;
-    selectAi: (accountId: string, selectedAi: 'deepseek' | 'openai' | null) => Promise<AccountRecord>;
-    resetHarness: (accountId: string) => Promise<void>;
+    getCurrent: () => Promise<AccountRecord>;
+    updateAiConfig: (field: 'deepseek' | 'openai', value: unknown) => Promise<AccountRecord>;
+    selectAi: (selectedAi: 'deepseek' | 'openai' | null) => Promise<AccountRecord>;
+    resetHarness: () => Promise<void>;
   };
   workspace: {
     list: (accountId: string) => Promise<WorkspaceRecord[]>;
@@ -214,6 +235,7 @@ export interface RobbotApi {
   };
   harness: {
     getStatus: () => Promise<HarnessRuntimeStatus>;
+    getCurrentWebUrl: () => Promise<DshWebViewTarget>;
     listActiveRuns: () => Promise<Record<string, ActiveRunRef>>;
     warmupRuntime: (input: HarnessWarmupInput) => Promise<void>;
     runPrompt: (input: HarnessRunInput) => Promise<HarnessRunResult>;
@@ -228,5 +250,16 @@ export interface RobbotApi {
 declare global {
   interface Window {
     robbot: RobbotApi;
+  }
+
+  namespace JSX {
+    interface IntrinsicElements {
+      webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+        src?: string;
+        partition?: string;
+        allowpopups?: string;
+        webpreferences?: string;
+      };
+    }
   }
 }

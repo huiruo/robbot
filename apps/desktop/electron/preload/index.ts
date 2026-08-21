@@ -9,14 +9,19 @@ contextBridge.exposeInMainWorld('robbot', {
     electron: process.versions.electron,
     node: process.versions.node,
   },
+  auth: {
+    getCurrent: () => ipcRenderer.invoke('auth:get-current'),
+    login: (input: unknown) => ipcRenderer.invoke('auth:login', input),
+    register: (input: unknown) => ipcRenderer.invoke('auth:register', input),
+    logout: () => ipcRenderer.invoke('auth:logout'),
+  },
   account: {
-    upsertCurrent: (input: unknown) => ipcRenderer.invoke('account:upsert-current', input),
-    get: (accountId: string) => ipcRenderer.invoke('account:get', accountId),
-    updateAiConfig: (accountId: string, field: 'deepseek' | 'openai', value: unknown) =>
-      ipcRenderer.invoke('account:update-ai-config', accountId, field, value),
-    selectAi: (accountId: string, selectedAi: 'deepseek' | 'openai' | null) =>
-      ipcRenderer.invoke('account:select-ai', accountId, selectedAi),
-    resetHarness: (accountId: string) => ipcRenderer.invoke('account:reset-harness', accountId),
+    getCurrent: () => ipcRenderer.invoke('account:get-current'),
+    updateAiConfig: (field: 'deepseek' | 'openai', value: unknown) =>
+      ipcRenderer.invoke('account:update-ai-config', field, value),
+    selectAi: (selectedAi: 'deepseek' | 'openai' | null) =>
+      ipcRenderer.invoke('account:select-ai', selectedAi),
+    resetHarness: () => ipcRenderer.invoke('account:reset-harness'),
   },
   workspace: {
     list: (accountId: string) => ipcRenderer.invoke('workspace:list', accountId),
@@ -40,6 +45,7 @@ contextBridge.exposeInMainWorld('robbot', {
   },
   harness: {
     getStatus: () => ipcRenderer.invoke('harness:get-status'),
+    getCurrentWebUrl: () => ipcRenderer.invoke('harness:get-current-web-url'),
     listActiveRuns: () => ipcRenderer.invoke('harness:list-active-runs'),
     warmupRuntime: (input: unknown) => ipcRenderer.invoke('harness:warmup-runtime', input),
     runPrompt: (input: unknown) => ipcRenderer.invoke('harness:run-prompt', input),

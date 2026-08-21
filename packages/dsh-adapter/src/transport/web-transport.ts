@@ -27,6 +27,14 @@ export class WebTransport implements HarnessTransport {
     await this.ensureServer(input.metadata);
   }
 
+  async webUrl(metadata?: Record<string, unknown>): Promise<string> {
+    await this.ensureServer(metadata);
+    const url = new URL(this.baseUrl());
+    url.searchParams.set('dsh-desktop-mode', 'compatibility');
+    url.searchParams.set('dsh-desktop-platform', process.platform);
+    return url.href;
+  }
+
   async createSession(input: CreateSessionInput): Promise<HarnessSession> {
     await this.ensureServer(input.metadata);
     const requested = typeof input.metadata?.robbotSessionId === 'string'
@@ -93,9 +101,10 @@ export class WebTransport implements HarnessTransport {
   }
 
   private async ensureServer(metadata?: Record<string, unknown>): Promise<void> {
-    const fingerprint = typeof (metadata?.aiRuntime as Record<string, unknown> | undefined)?.fingerprint === 'string'
-      ? String((metadata?.aiRuntime as Record<string, unknown>).fingerprint)
-      : '';
+    const dshHome = typeof metadata?.dshHome === 'string' && metadata.dshHome.trim()
+      ? metadata.dshHome
+      : undefined;
+    const fingerprint = runtimeFingerprint(metadata, dshHome);
     if (this.started && this.runtimeFingerprint === fingerprint) return;
     if (this.started && this.runtimeFingerprint !== fingerprint) {
       await this.runtimeManager.stop(this.processSessionId, 'web');
@@ -105,7 +114,7 @@ export class WebTransport implements HarnessTransport {
     const runtime = this.runtimeManager.resolveRuntime();
     await this.runtimeManager.start(this.processSessionId, 'web', {
       ROBBOT_DSH_WEB_PORT: String(this.port),
-      DSH_HOME: path.resolve(runtime.root, '../../.dsh-home'),
+      DSH_HOME: dshHome ?? path.resolve(runtime.root, '../../.dsh-home'),
       ...runtimeEnv(metadata),
     });
     const base = this.baseUrl();
@@ -198,11 +207,26 @@ class AsyncQueue<T> {
 function runtimeEnv(metadata?: Record<string, unknown>): Record<string, string | undefined> {
   const ai = metadata?.aiRuntime as Record<string, unknown> | undefined;
   return {
-    DEEPSEEK_API_KEY: typeof ai?.key === 'string' ? ai.key : undefined,
-    DEEPSEEK_BASE_URL: typeof ai?.apiUrl === 'string' ? ai.apiUrl : undefined,
-    DSH_PROVIDER: typeof ai?.provider === 'string' ? (ai.provider === 'openai' ? 'openai' : 'deepseek-official') : undefined,
+    DEEPSEEK_API_KEY: ai?.provider === 'deepseek' && typeof ai.key === 'string' ? ai.key : undefined,
+    OPENAI_API_KEY: ai?.provider === 'openai' && typeof ai.key === 'string' ? ai.key : undefined,
+    DEEPSEEK_BASE_URL: ai?.provider === 'deepseek' && typeof ai.apiUrl === 'string' ? ai.apiUrl : undefined,
+    OPENAI_BASE_URL: ai?.provider === 'openai' && typeof ai.apiUrl === 'string' ? ai.apiUrl : undefined,
+    DSH_PROVIDER: typeof ai?.dshProvider === 'string' ? ai.dshProvider : typeof ai?.provider === 'string' ? (ai.provider === 'openai' ? 'openai' : 'deepseek-official') : undefined,
     DSH_MODEL: typeof ai?.model === 'string' ? ai.model : undefined,
   };
+}
+
+function runtimeFingerprint(metadata: Record<string, unknown> | undefined, dshHome: string | undefined): string {
+  const ai = metadata?.aiRuntime as Record<string, unknown> | undefined;
+  if (typeof ai?.fingerprint === 'string') return ai.fingerprint;
+  return [
+    typeof metadata?.accountHash === 'string' ? metadata.accountHash : '',
+    typeof ai?.provider === 'string' ? ai.provider : '',
+    typeof ai?.model === 'string' ? ai.model : '',
+    typeof ai?.apiUrl === 'string' ? ai.apiUrl : '',
+    typeof ai?.keyFingerprint === 'string' ? ai.keyFingerprint : '',
+    dshHome ?? '',
+  ].join(':');
 }
 
 function mapFrame(sessionId: string, frame: Frame, approvals: Map<string, { rpcId: string; approvalId: string }>): HarnessEvent | undefined {

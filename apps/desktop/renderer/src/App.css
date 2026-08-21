@@ -1,2 +1,12 @@
 @keyframes pulse-soft { 50% { opacity: .45; } }
 .status-pulse { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.dsh-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgb(226 232 240);
+  border-top-color: rgb(15 23 42);
+  border-radius: 9999px;
+  animation: spin .9s linear infinite;
+}

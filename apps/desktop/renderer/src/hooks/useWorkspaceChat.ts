@@ -79,7 +79,6 @@ export function useWorkspaceChat(accountId: string) {
 
   const bootstrap = useCallback(async () => {
     try {
-      await window.robbot.account.upsertCurrent({ id: accountId, username: 'Local' })
       await refreshStatus()
       const loadedWorkspaces = await window.robbot.workspace.list(accountId)
       setWorkspaces(loadedWorkspaces)

@@ -38,6 +38,11 @@ export class DshLocalHarness implements LocalHarness {
     await this.transportForMode(runMode).warmup(input);
   }
 
+  async webUrl(input: { metadata?: Record<string, unknown> } = {}): Promise<string> {
+    await this.runtimeManager.verifyRuntime();
+    return this.webTransport.webUrl(input.metadata);
+  }
+
   async createSession(input: CreateSessionInput): Promise<HarnessSession> {
     await this.runtimeManager.verifyRuntime();
     const runMode = normalizeRunMode(input.metadata?.runMode, this.defaultRunMode());

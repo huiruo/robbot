@@ -16,7 +16,7 @@ function TabPanel(props: { value: number; index: number; children: React.ReactNo
   return <div role="tabpanel" hidden={props.value !== props.index} id={`settings-tabpanel-${props.index}`} aria-labelledby={`settings-tab-${props.index}`} className="min-h-0 min-w-0 flex-1 overflow-y-auto">{props.value === props.index ? props.children : null}</div>
 }
 
-export function SettingsModal(props: { open: boolean; email: string; deepseek: string | null; openai: string | null; selectedAi: string | null; onClose(): void; onSave(field: AiField, value: Record<string, unknown>): Promise<void>; onSelect(field: AiField): Promise<void>; onLogout(): void }) {
+export function SettingsModal(props: { open: boolean; variant?: 'modal' | 'page'; email: string; deepseek: string | null; openai: string | null; selectedAi: string | null; onClose(): void; onSave(field: AiField, value: Record<string, unknown>): Promise<void>; onSelect(field: AiField): Promise<void>; onLogout(): void }) {
   const [tab, setTab] = useState(0)
   const [configs, setConfigs] = useState<Record<AiField, string>>(() => ({ deepseek: formatJson(props.deepseek, emptyDeepseekConfig), openai: formatJson(props.openai, emptyChatgptConfig) }))
   const [keys, setKeys] = useState<Record<AiField, string>>(() => ({ deepseek: readKey(props.deepseek), openai: readKey(props.openai) }))
@@ -43,10 +43,9 @@ export function SettingsModal(props: { open: boolean; email: string; deepseek: s
   }
   const select = async (field: AiField) => { setSelecting(field); try { await props.onSelect(field) } finally { setSelecting(null) } }
 
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onMouseDown={props.onClose}>
-    <div className="w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+  const content = <div className={props.variant === 'page' ? 'h-full w-full overflow-hidden rounded-none bg-white' : 'w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-2xl'} onMouseDown={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h2 className="m-0 text-lg font-semibold text-slate-950">Settings</h2><p className="m-0 mt-1 text-xs text-slate-500">Account and AI models</p></div><button className="rounded p-1 text-slate-400 hover:bg-slate-100" onClick={props.onClose} aria-label="Close"><X className="h-4 w-4" /></button></div>
-      <Box sx={{ display: 'flex', minHeight: 470, maxHeight: '70vh', overflow: 'hidden' }}>
+      <Box sx={{ display: 'flex', height: props.variant === 'page' ? 'calc(100% - 65px)' : 470, minHeight: 0, minWidth: 0, maxHeight: props.variant === 'page' ? 'none' : '70vh', overflow: 'hidden' }}>
         <Tabs orientation="vertical" value={tab} onChange={(_, value: number) => setTab(value)} aria-label="Settings sections" sx={{ width: 150, flexShrink: 0, borderRight: 1, borderColor: 'divider', '& .MuiTab-root': { alignItems: 'flex-start', minHeight: 48, textTransform: 'none', fontSize: 13 } }}>
           <Tab label="Model" {...tabProps(0)} />
           <Tab label="Account" {...tabProps(1)} />
@@ -55,6 +54,13 @@ export function SettingsModal(props: { open: boolean; email: string; deepseek: s
         <TabPanel value={tab} index={1}><div className="flex h-full flex-col p-6"><h3 className="m-0 text-base font-semibold text-slate-950">Account</h3><p className="mt-1 text-sm text-slate-500">Your Robbot account</p><div className="mt-6"><label className="text-xs font-medium text-slate-600">Email</label><div className="mt-1 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{props.email || '—'}</div></div><button className="mt-auto flex w-fit items-center gap-2 rounded-md border border-rose-200 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50" onClick={props.onLogout}><LogOut className="h-4 w-4" />Sign out</button></div></TabPanel>
       </Box>
     </div>
+
+  if (props.variant === 'page') {
+    return <div className="h-full min-h-0 bg-white">{content}</div>
+  }
+
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onMouseDown={props.onClose}>
+    {content}
   </div>
 }
 

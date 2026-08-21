@@ -1,9 +1,51 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LogOut, RefreshCw, Settings } from 'lucide-react'
 import { LoginPage } from './components/auth/LoginPage'
 import { SettingsModal } from './components/home/SettingsModal'
 import type { AccountRecord, AuthUser, DshWebViewTarget } from './robbot-api'
 import './App.css'
+
+const DSH_BRAND_CSS = `
+button[class*="brand"] svg {
+  display: none !important;
+}
+
+button[class*="brand"]::before {
+  content: "Robbot";
+  color: currentColor;
+  font: 700 20px/24px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+div[class*="collapsed"] button[class*="toggle"] svg[class*="railFish"] {
+  display: none !important;
+}
+
+div[class*="collapsed"] button[class*="toggle"]::before {
+  content: "R";
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 6px;
+  background: #0f1115;
+  color: #ffffff;
+  font: 700 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+div[class*="collapsed"] button[class*="toggle"]:hover::before {
+  display: none;
+}
+
+div[class*="headline"]:has(> span[class*="headlineText"], > span[class*="previewBadge"]) {
+  display: none !important;
+}
+`
+
+type DshWebviewElement = HTMLElement & {
+  insertCSS: (css: string) => Promise<string>;
+}
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -25,6 +67,7 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
   const [viewNonce, setViewNonce] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const webviewRef = useRef<DshWebviewElement | null>(null)
 
   useEffect(() => {
     void window.robbot.account.getCurrent().then(setAccount)
@@ -59,8 +102,45 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
   }
 
   useEffect(() => {
-    void loadDsh()
+    let cancelled = false
+
+    void window.robbot.harness.getCurrentWebUrl()
+      .then((target) => {
+        if (!cancelled) setDshTarget(target)
+      })
+      .catch((cause) => {
+        if (cancelled) return
+        const message = cause instanceof Error ? cause.message : String(cause)
+        setDshTarget(null)
+        setError(message)
+        if (/API key is missing/i.test(message)) {
+          setSettingsOpen(true)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [user.id])
+
+  useEffect(() => {
+    const webview = webviewRef.current
+    if (webview === null || dshTarget === null || settingsOpen) return
+
+    const injectBrandCss = () => {
+      void webview.insertCSS(DSH_BRAND_CSS).catch((cause) => {
+        console.warn('Failed to apply DSH brand override:', cause)
+      })
+    }
+
+    webview.addEventListener('dom-ready', injectBrandCss)
+    return () => {
+      webview.removeEventListener('dom-ready', injectBrandCss)
+    }
+  }, [dshTarget, settingsOpen, viewNonce])
 
   const saveSettings = async (field: 'deepseek' | 'openai', value: Record<string, unknown>) => {
     setDshTarget(null)
@@ -86,7 +166,7 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-3">
           <div className="flex min-w-0 items-center gap-2">
             <div className="grid h-6 w-6 place-items-center rounded-md bg-slate-950 text-[11px] font-semibold text-white">R</div>
-            <div className="truncate text-[13px] font-medium text-slate-700">Robbot / DSH Desktop</div>
+            <div className="truncate text-[13px] font-medium text-slate-700">Robbot — Personal AI powered by DeepSeek Harness</div>
             {loading ? <div className="status-pulse text-[12px] text-slate-400">Starting DSH...</div> : null}
           </div>
           <div className="flex items-center gap-1">
@@ -118,12 +198,15 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
             />
           ) : dshTarget ? (
             <webview
+              ref={(node) => {
+                webviewRef.current = node as DshWebviewElement | null
+                node?.setAttribute('allowpopups', 'true')
+              }}
               key={`${dshTarget.partition}:${dshTarget.fingerprint}:${viewNonce}`}
               title="DSH Desktop"
               src={dshTarget.url}
               partition={dshTarget.partition}
               className="h-full w-full border-0 bg-white"
-              allowpopups
               webpreferences="contextIsolation=yes,nodeIntegration=no"
             />
           ) : loading ? (
@@ -152,7 +235,7 @@ function DshLoading() {
       <div className="flex flex-col items-center gap-4 text-center">
         <div className="dsh-spinner" aria-hidden="true" />
         <div>
-          <div className="text-[15px] font-medium text-slate-900">Starting DSH Desktop</div>
+          <div className="text-[15px] font-medium text-slate-900">Starting DeepSeek Harness</div>
           <div className="mt-1 text-[13px] text-slate-500">Preparing your isolated runtime…</div>
         </div>
       </div>

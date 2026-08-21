@@ -7,7 +7,8 @@ const appDir = path.resolve(scriptDir, '..');
 const repoRoot = path.resolve(appDir, '../..');
 const dshRoot = path.join(repoRoot, 'vendor', 'deepseek-harness');
 const outputDir = path.resolve(process.argv[2] ?? path.join(appDir, '.runtime', 'dsh'));
-const runtimeLayoutVersion = 2;
+const runtimeLayoutVersion = 3;
+const currentNativeTag = `${process.platform}-${process.arch}`;
 
 function exists(relativePath) {
   return fs.existsSync(path.join(dshRoot, relativePath));
@@ -33,6 +34,111 @@ function packageParts(packageName) {
 
 function packageManifest(packageDir) {
   return JSON.parse(fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
+}
+
+function fieldReferencesSrc(value) {
+  if (typeof value === 'string') {
+    return value.split('/').includes('src');
+  }
+
+  if (Array.isArray(value)) {
+    return value.some(fieldReferencesSrc);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.entries(value).some(([key, childValue]) => (
+      key !== 'types'
+      && key !== 'typings'
+      && fieldReferencesSrc(childValue)
+    ));
+  }
+
+  return false;
+}
+
+function collectRuntimeEntryFiles(value, entries = new Set()) {
+  if (typeof value === 'string') {
+    entries.add(value);
+    return entries;
+  }
+
+  if (Array.isArray(value)) {
+    for (const childValue of value) {
+      collectRuntimeEntryFiles(childValue, entries);
+    }
+    return entries;
+  }
+
+  if (value && typeof value === 'object') {
+    for (const [key, childValue] of Object.entries(value)) {
+      if (key !== 'types' && key !== 'typings') {
+        collectRuntimeEntryFiles(childValue, entries);
+      }
+    }
+  }
+
+  return entries;
+}
+
+function entryFilesReferenceSrc(packageDir, manifest) {
+  const entries = new Set([
+    ...collectRuntimeEntryFiles(manifest.main),
+    ...collectRuntimeEntryFiles(manifest.module),
+    ...collectRuntimeEntryFiles(manifest.exports),
+    ...collectRuntimeEntryFiles(manifest.bin),
+  ]);
+
+  for (const entry of entries) {
+    if (entry.split('/').includes('src')) {
+      return true;
+    }
+
+    const entryPath = path.join(packageDir, entry);
+    if (fs.existsSync(entryPath) && fs.statSync(entryPath).isFile()) {
+      const text = fs.readFileSync(entryPath, 'utf8');
+      if (text.includes('/src/') || text.includes('./src/') || text.includes('"src/') || text.includes("'src/")) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function packageUsesSrcAtRuntime(packageDir, manifest) {
+  return fieldReferencesSrc(manifest.main)
+    || fieldReferencesSrc(manifest.module)
+    || fieldReferencesSrc(manifest.exports)
+    || fieldReferencesSrc(manifest.bin)
+    || entryFilesReferenceSrc(packageDir, manifest);
+}
+
+function packageMatchesCurrentPlatform(packageName) {
+  if (process.platform === 'darwin') {
+    if (packageName.includes('win32') || packageName.includes('windows') || packageName.includes('linux')) {
+      return false;
+    }
+    if (packageName.includes('darwin-x64') && process.arch !== 'x64') {
+      return false;
+    }
+    if (packageName.includes('darwin-arm64') && process.arch !== 'arm64') {
+      return false;
+    }
+  }
+
+  if (process.platform === 'linux') {
+    if (packageName.includes('win32') || packageName.includes('windows') || packageName.includes('darwin')) {
+      return false;
+    }
+  }
+
+  if (process.platform === 'win32') {
+    if (packageName.includes('darwin') || packageName.includes('linux')) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function packageDirectoryExists(packageDir) {
@@ -62,8 +168,9 @@ function resolvePackageDirectory(packageName) {
   throw new Error(`Unable to resolve DSH runtime dependency: ${packageName}`);
 }
 
-function copyPackageDirectory(sourcePath, targetPath) {
+function copyPackageDirectory(sourcePath, targetPath, options = {}) {
   const sourceRealPath = fs.realpathSync(sourcePath);
+  const keepSrc = options.keepSrc === true;
   fs.rmSync(targetPath, { force: true, recursive: true });
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.cpSync(sourceRealPath, targetPath, {
@@ -81,12 +188,17 @@ function copyPackageDirectory(sourcePath, targetPath) {
         '.cache',
         '.turbo',
         'coverage',
+        'docs',
+        'examples',
         'node_modules',
+        'sample',
+        'samples',
         'test',
         'tests',
         '__tests__',
-      ].includes(part))
+      ].includes(part) || (!keepSrc && part === 'src'))
         && !source.endsWith('.map')
+        && !source.endsWith('.d.ts')
         && !source.endsWith('.tsbuildinfo');
     },
   });
@@ -101,7 +213,7 @@ function materializePackage(packageName, seen = new Set()) {
   const sourcePath = resolvePackageDirectory(packageName);
   const targetPath = path.join(outputDir, 'node_modules', ...packageParts(packageName));
   const manifest = packageManifest(sourcePath);
-  copyPackageDirectory(sourcePath, targetPath);
+  copyPackageDirectory(sourcePath, targetPath, { keepSrc: packageUsesSrcAtRuntime(sourcePath, manifest) });
 
   const dependencies = {
     ...manifest.dependencies,
@@ -109,6 +221,10 @@ function materializePackage(packageName, seen = new Set()) {
     ...manifest.peerDependencies,
   };
   for (const childPackageName of Object.keys(dependencies)) {
+    if (manifest.optionalDependencies?.[childPackageName] && !packageMatchesCurrentPlatform(childPackageName)) {
+      continue;
+    }
+
     try {
       materializePackage(childPackageName, seen);
     } catch (error) {
@@ -126,7 +242,7 @@ function buildFlatRuntime() {
   const cliPath = path.join(dshRoot, 'apps', 'cli');
   const cliManifest = packageManifest(cliPath);
   fs.writeFileSync(path.join(outputDir, 'package.json'), `${JSON.stringify(cliManifest, null, 2)}\n`);
-  copyPackageDirectory(cliPath, outputDir);
+  copyPackageDirectory(cliPath, outputDir, { keepSrc: packageUsesSrcAtRuntime(cliPath, cliManifest) });
 
   const seen = new Set();
   for (const packageName of Object.keys({
@@ -134,6 +250,10 @@ function buildFlatRuntime() {
     ...cliManifest.optionalDependencies,
     ...cliManifest.peerDependencies,
   })) {
+    if (cliManifest.optionalDependencies?.[packageName] && !packageMatchesCurrentPlatform(packageName)) {
+      continue;
+    }
+
     try {
       materializePackage(packageName, seen);
     } catch (error) {
@@ -143,6 +263,29 @@ function buildFlatRuntime() {
     }
   }
   console.log(`[robbot:dsh-runtime] materialized ${seen.size} packages into a flat runtime node_modules`);
+}
+
+function removePathIfExists(relativePath) {
+  const absolutePath = path.join(outputDir, relativePath);
+  if (fs.existsSync(absolutePath)) {
+    fs.rmSync(absolutePath, { force: true, recursive: true });
+  }
+}
+
+function prunePlatformSpecificRuntime() {
+  const nodePtyPrebuilds = path.join(outputDir, 'node_modules', 'node-pty', 'prebuilds');
+  if (fs.existsSync(nodePtyPrebuilds)) {
+    for (const entry of fs.readdirSync(nodePtyPrebuilds, { withFileTypes: true })) {
+      if (entry.isDirectory() && entry.name !== currentNativeTag) {
+        fs.rmSync(path.join(nodePtyPrebuilds, entry.name), { force: true, recursive: true });
+      }
+    }
+  }
+
+  if (process.platform !== 'linux') {
+    removePathIfExists('node_modules/@deepseek-ai/node-addon-landlock-run-linux-arm64');
+    removePathIfExists('node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64');
+  }
 }
 
 function removeGeneratedNoise(directory) {
@@ -159,8 +302,11 @@ function removeGeneratedNoise(directory) {
 
     if (
       entry.name.endsWith('.map')
+      || entry.name.endsWith('.d.ts')
       || entry.name.endsWith('.tsbuildinfo')
+      || entry.name.endsWith('.pdb')
       || entry.name === 'README.i18n.yaml'
+      || (entry.name.endsWith('.md') && !entry.name.toLowerCase().startsWith('license'))
     ) {
       fs.rmSync(absolutePath, { force: true });
     }
@@ -181,5 +327,6 @@ function writeRuntimeMarker() {
 
 assertDshBuildReady();
 buildFlatRuntime();
+prunePlatformSpecificRuntime();
 removeGeneratedNoise(outputDir);
 writeRuntimeMarker();

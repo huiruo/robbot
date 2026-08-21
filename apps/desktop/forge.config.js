@@ -5,6 +5,7 @@ const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 const electronVersion = require('./package.json').devDependencies.electron.replace(/^[^\d]*/, '');
 let preparedDshRuntimeBundle;
+let preparedNodeExecutable;
 
 function packagePathParts(packageName) {
   return packageName.split('/');
@@ -156,6 +157,71 @@ function copyDirectory(sourcePath, targetPath, options = {}) {
   });
 }
 
+function directorySizeBytes(targetPath) {
+  if (!fsSync.existsSync(targetPath)) {
+    return 0;
+  }
+
+  const stat = fsSync.lstatSync(targetPath);
+  if (!stat.isDirectory()) {
+    return stat.size;
+  }
+
+  let size = 0;
+  for (const entry of fsSync.readdirSync(targetPath)) {
+    size += directorySizeBytes(path.join(targetPath, entry));
+  }
+  return size;
+}
+
+function formatBytes(bytes) {
+  const units = ['B', 'K', 'M', 'G'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)}${units[unitIndex]}`;
+}
+
+function logPackageSizeAudit(resourceDir) {
+  const appDir = process.platform === 'darwin'
+    ? path.resolve(resourceDir, '..', '..')
+    : path.resolve(resourceDir, '..');
+  const entries = [
+    ['app', appDir],
+    ['Frameworks', process.platform === 'darwin' ? path.join(appDir, 'Contents', 'Frameworks') : undefined],
+    ['Resources', resourceDir],
+    ['dsh-runtime', path.join(resourceDir, 'dsh-runtime')],
+    ['bin/node', path.join(resourceDir, 'bin', process.platform === 'win32' ? 'node.exe' : 'node')],
+    ['app.asar', path.join(resourceDir, 'app.asar')],
+    ['app.asar.unpacked', path.join(resourceDir, 'app.asar.unpacked')],
+  ];
+
+  console.log('[robbot:size] packaged app size audit');
+  for (const [label, targetPath] of entries) {
+    if (targetPath && fsSync.existsSync(targetPath)) {
+      console.log(`[robbot:size] ${label}: ${formatBytes(directorySizeBytes(targetPath))}`);
+    }
+  }
+}
+
+function logArtifactSizeAudit(makeResults = []) {
+  const artifacts = makeResults.flatMap(result => result.artifacts ?? []);
+  if (artifacts.length === 0) {
+    return;
+  }
+
+  console.log('[robbot:size] make artifact size audit');
+  for (const artifactPath of artifacts) {
+    if (fsSync.existsSync(artifactPath)) {
+      console.log(`[robbot:size] ${path.basename(artifactPath)}: ${formatBytes(directorySizeBytes(artifactPath))}`);
+    }
+  }
+}
+
 function materializeExternalSymlinks(rootPath) {
   let changed = true;
 
@@ -215,7 +281,7 @@ function copyRobbotRuntimeResources(outputPaths) {
   const repoRoot = path.resolve(__dirname, '../..');
   const configSource = path.join(repoRoot, 'config');
   const dshRuntimeSource = preparedDshRuntimeBundle ?? buildDshRuntimeBundle();
-  const nodeExecutable = process.execPath;
+  const nodeExecutable = preparedNodeExecutable ?? prepareNodeRuntime();
 
   for (const outputPath of outputPaths) {
     for (const resourceDir of resourceDirsForPackageOutput(outputPath)) {
@@ -230,6 +296,7 @@ function copyRobbotRuntimeResources(outputPaths) {
       fsSync.mkdirSync(path.dirname(nodeTarget), { recursive: true });
       fsSync.copyFileSync(nodeExecutable, nodeTarget);
       fsSync.chmodSync(nodeTarget, 0o755);
+      logPackageSizeAudit(resourceDir);
     }
   }
 }
@@ -264,10 +331,41 @@ function buildDshRuntimeBundle() {
 function isCurrentDshRuntimeBundle(runtimePath) {
   try {
     const marker = JSON.parse(fsSync.readFileSync(path.join(runtimePath, 'robbot-runtime.json'), 'utf8'));
-    return marker?.kind === 'robbot-dsh-runtime' && marker?.layoutVersion === 2;
+    return marker?.kind === 'robbot-dsh-runtime' && marker?.layoutVersion === 3;
   } catch {
     return false;
   }
+}
+
+function prepareNodeRuntime() {
+  const runtimeBinDir = path.join(__dirname, '.runtime', 'bin');
+  const nodeTarget = path.join(runtimeBinDir, process.platform === 'win32' ? 'node.exe' : 'node');
+
+  fsSync.mkdirSync(runtimeBinDir, { recursive: true });
+  fsSync.copyFileSync(process.execPath, nodeTarget);
+  fsSync.chmodSync(nodeTarget, 0o755);
+
+  if (process.platform !== 'win32') {
+    const stripResult = spawnSync('strip', ['-x', '-S', nodeTarget], {
+      stdio: 'pipe',
+    });
+    const codesignResult = stripResult.status === 0 && process.platform === 'darwin'
+      ? spawnSync('codesign', ['--force', '--sign', '-', nodeTarget], { stdio: 'pipe' })
+      : undefined;
+    if (stripResult.error || stripResult.status !== 0 || codesignResult?.status !== 0 || codesignResult?.error) {
+      const detail = stripResult.error?.message
+        ?? stripResult.stderr?.toString().trim()
+        ?? codesignResult?.error?.message
+        ?? codesignResult?.stderr?.toString().trim()
+        ?? `exit ${String(stripResult.status)}`;
+      console.warn(`[robbot:package] unable to strip Node runtime (${detail}); using unstripped Node`);
+      fsSync.copyFileSync(process.execPath, nodeTarget);
+      fsSync.chmodSync(nodeTarget, 0o755);
+    }
+  }
+
+  console.log(`[robbot:package] prepared Node runtime at ${nodeTarget} (${formatBytes(directorySizeBytes(nodeTarget))})`);
+  return nodeTarget;
 }
 
 function copyRobbotConfig(sourcePath, targetPath) {
@@ -301,9 +399,13 @@ module.exports = {
       materializeRuntimeDependencies();
       materializePackage('electron');
       preparedDshRuntimeBundle = buildDshRuntimeBundle();
+      preparedNodeExecutable = prepareNodeRuntime();
     },
     async postPackage(_forgeConfig, packageResult) {
       copyRobbotRuntimeResources(packageResult.outputPaths);
+    },
+    async postMake(_forgeConfig, makeResults) {
+      logArtifactSizeAudit(makeResults);
     },
     async preMake() {
       if (process.platform === 'win32') {

@@ -6,7 +6,7 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 const electronVersion = require('./package.json').devDependencies.electron.replace(/^[^\d]*/, '');
 let preparedDshRuntimeBundle;
 let preparedNodeExecutable;
-let createdElectronPackageLink = false;
+const createdElectronPackageLinks = new Set();
 
 function packagePathParts(packageName) {
   return packageName.split('/');
@@ -125,30 +125,60 @@ function materializeRuntimeDependencies() {
   }
 }
 
-function ensureElectronPackageLink() {
-  const targetPath = path.join(__dirname, 'node_modules', 'electron');
-
-  if (packageDirExists(targetPath)) {
+function ensurePackageLink(packageName, seen = new Set()) {
+  if (seen.has(packageName)) {
     return;
   }
 
-  const sourcePath = resolvePackageDir('electron');
-  fsSync.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fsSync.symlinkSync(sourcePath, targetPath, process.platform === 'win32' ? 'junction' : 'dir');
-  createdElectronPackageLink = true;
-  process.once('exit', cleanupElectronPackageLink);
-  console.log(`[robbot:package] linked Electron package for Forge at ${targetPath}`);
+  seen.add(packageName);
+  const targetPath = path.join(__dirname, 'node_modules', ...packagePathParts(packageName));
+
+  if (!packageDirExists(targetPath)) {
+    const sourcePath = resolvePackageDir(packageName);
+    fsSync.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fsSync.symlinkSync(sourcePath, targetPath, process.platform === 'win32' ? 'junction' : 'dir');
+    createdElectronPackageLinks.add(targetPath);
+    console.log(`[robbot:package] linked ${packageName} for Forge at ${targetPath}`);
+  }
+
+  const packageJson = readPackageJson(targetPath);
+  const childDependencies = {
+    ...packageJson.dependencies,
+    ...packageJson.optionalDependencies,
+  };
+
+  for (const childPackageName of Object.keys(childDependencies)) {
+    try {
+      ensurePackageLink(childPackageName, seen);
+    } catch (error) {
+      if (!packageJson.optionalDependencies?.[childPackageName]) {
+        throw error;
+      }
+    }
+  }
 }
 
-function cleanupElectronPackageLink() {
-  if (!createdElectronPackageLink) {
+function ensureElectronPackageLinks() {
+  if (createdElectronPackageLinks.size === 0) {
+    process.once('exit', cleanupElectronPackageLinks);
+  }
+
+  ensurePackageLink('electron');
+}
+
+function cleanupElectronPackageLinks() {
+  if (createdElectronPackageLinks.size === 0) {
     return;
   }
 
-  const targetPath = path.join(__dirname, 'node_modules', 'electron');
-  fsSync.unlinkSync(targetPath);
-  createdElectronPackageLink = false;
-  console.log(`[robbot:package] removed temporary Electron package link at ${targetPath}`);
+  for (const targetPath of [...createdElectronPackageLinks].reverse()) {
+    if (fsSync.existsSync(targetPath) || fsSync.lstatSync(targetPath, { throwIfNoEntry: false })) {
+      fsSync.unlinkSync(targetPath);
+    }
+  }
+
+  createdElectronPackageLinks.clear();
+  console.log('[robbot:package] removed temporary Electron package links');
 }
 
 function prepareElectronWinstallerVendor() {
@@ -428,7 +458,7 @@ module.exports = {
       // hoisted layout, Node can resolve Electron from the workspace root,
       // but Packager cannot. A link keeps the path visible without copying
       // Electron.app into the development tree.
-      ensureElectronPackageLink();
+      ensureElectronPackageLinks();
       materializeRuntimeDependencies();
       preparedDshRuntimeBundle = buildDshRuntimeBundle();
       preparedNodeExecutable = prepareNodeRuntime();
@@ -437,7 +467,7 @@ module.exports = {
       try {
         copyRobbotRuntimeResources(packageResult.outputPaths);
       } finally {
-        cleanupElectronPackageLink();
+        cleanupElectronPackageLinks();
       }
     },
     async postMake(_forgeConfig, makeResults) {

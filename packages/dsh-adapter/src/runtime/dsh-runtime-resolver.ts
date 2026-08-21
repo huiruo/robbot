@@ -15,6 +15,25 @@ export class DshRuntimeResolver {
   ) {}
 
   resolveRuntime(): ResolvedDshRuntime {
+    if (isPackagedAppRoot(this.appRoot)) {
+      return {
+        root: path.resolve(this.appRoot, this.config.submodule),
+        config: this.config,
+      };
+    }
+
+    const localBuiltRuntime = resolveLocalBuiltRuntime(this.appRoot);
+    if (localBuiltRuntime) {
+      return {
+        root: localBuiltRuntime,
+        config: {
+          ...this.config,
+          buildRequired: false,
+          configPath: path.relative(localBuiltRuntime, path.resolve(this.appRoot, this.config.submodule, this.config.configPath)),
+        },
+      };
+    }
+
     return {
       root: path.resolve(this.appRoot, this.config.submodule),
       config: this.config,
@@ -65,4 +84,22 @@ function defaultRobbotRoot(): string {
   }
 
   return findRobbotRoot(process.cwd());
+}
+
+function isPackagedAppRoot(appRoot: string): boolean {
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  return Boolean(resourcesPath && path.resolve(appRoot) === path.resolve(resourcesPath));
+}
+
+function resolveLocalBuiltRuntime(appRoot: string): string | undefined {
+  for (const candidate of [
+    path.resolve(process.cwd(), '.runtime/dsh'),
+    path.resolve(appRoot, 'apps/desktop/.runtime/dsh'),
+  ]) {
+    if (existsSync(path.join(candidate, 'lib/bin.js'))) {
+      return candidate;
+    }
+  }
+
+  return undefined;
 }

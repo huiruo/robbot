@@ -33,7 +33,7 @@ export class DshProcess {
           ? 'packages/examples/jsonrpc-demo/src/bin.ts'
           : 'apps/cli/src/bin.ts';
     const args = builtCli
-      ? builtCliArgs(this.protocol, bin, this.configPath, this.envOverrides)
+      ? builtCliArgs(this.cwd, this.protocol, bin, this.configPath, this.envOverrides)
       : this.protocol === 'sdk'
         ? ['--import', 'tsx', bin, this.configPath]
         : this.protocol === 'acp'
@@ -250,22 +250,29 @@ function isBuiltCliRuntime(cwd: string): boolean {
 }
 
 function builtCliArgs(
+  cwd: string,
   protocol: DshProcessProtocol,
   bin: string,
   configPath: string,
   envOverrides: Record<string, string | undefined>,
 ): string[] {
+  const nodeFlags = shouldExposeInternalsForLocalBuiltRuntime(cwd) ? ['--expose-internals'] : [];
   if (protocol === 'web') {
-    return [bin, 'web', '--host', '127.0.0.1', '--port', envPort(envOverrides), '--no-open'];
+    return [...nodeFlags, bin, 'web', '--host', '127.0.0.1', '--port', envPort(envOverrides), '--no-open'];
   }
   if (protocol === 'sdk') {
-    return [bin, configPath];
+    return [...nodeFlags, bin, configPath];
   }
-  return [bin, '--config', configPath];
+  return [...nodeFlags, bin, '--config', configPath];
 }
 
 function envPort(env: Record<string, string | undefined>): string {
   return env.ROBBOT_DSH_WEB_PORT ?? '3187';
+}
+
+function shouldExposeInternalsForLocalBuiltRuntime(cwd: string): boolean {
+  const normalized = path.normalize(cwd);
+  return normalized.endsWith(path.join('apps', 'desktop', '.runtime', 'dsh'));
 }
 
 function readRobbotEnvFromDshRoot(dshRoot: string): Record<string, string> {

@@ -63,6 +63,10 @@ jobs:
       - name: Install renderer dependencies
         run: npm ci --prefix apps/desktop/renderer
 
+      - name: Build DSH runtime
+        if: matrix.os == 'windows-2022'
+        run: pnpm run dsh:build
+
       - name: Prepare app node_modules for Forge
         shell: bash
         run: |

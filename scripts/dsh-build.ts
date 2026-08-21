@@ -3,11 +3,16 @@ import path from 'node:path';
 
 const dshRoot = path.resolve('vendor/deepseek-harness');
 const corepackHome = path.resolve('.cache/corepack');
-// Windows exposes Corepack as a .cmd shim when spawning without a shell.
-const corepackCommand = process.platform === 'win32' ? 'corepack.cmd' : 'corepack';
-const result = spawnSync(corepackCommand, ['pnpm', 'run', 'build'], {
+// pnpm/action-setup provides pnpm directly on GitHub Actions. Use its Windows
+// shim explicitly because .cmd files cannot be spawned by Node as plain names.
+const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+const result = spawnSync(pnpmCommand, ['run', 'build'], {
   cwd: dshRoot,
   env: { ...process.env, CI: 'true', COREPACK_HOME: corepackHome },
   stdio: 'inherit',
 });
+
+if (result.error) {
+  console.error(`Failed to start ${pnpmCommand}: ${result.error.message}`);
+}
 process.exit(result.status ?? 1);

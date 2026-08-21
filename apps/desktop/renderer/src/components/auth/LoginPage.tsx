@@ -1,6 +1,6 @@
 import { Alert, Box, Button, IconButton, InputAdornment, Paper, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { Eye, EyeOff } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { AuthUser } from '../../robbot-api'
 
@@ -13,6 +13,24 @@ export function LoginPage(props: { onDone: (user: AuthUser) => void }) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [savedLogin, setSavedLogin] = useState<{ email: string; password: string } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void window.robbot.auth.getSavedLogin()
+      .then((saved) => {
+        if (cancelled || !saved) return
+        setEmail(saved.email)
+        setPassword(saved.password)
+        setSavedLogin(saved)
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -30,6 +48,10 @@ export function LoginPage(props: { onDone: (user: AuthUser) => void }) {
         : await window.robbot.auth.register({ email: normalizedEmail, password })
       props.onDone(user)
     } catch (cause) {
+      if (mode === 'login' && savedLogin?.email === normalizedEmail && savedLogin.password === password) {
+        setPassword('')
+        setSavedLogin(null)
+      }
       setError(cause instanceof Error ? cause.message : mode === 'login' ? '登录失败' : '注册失败')
     } finally {
       setLoading(false)

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull } from 'drizzle-orm';
 
 import type { DesktopDatabase } from './database';
 import { accounts, messages, sessionEvents, sessions, workspaces } from './schema';
@@ -20,6 +20,10 @@ export interface AccountRecord {
   createdAt: number;
   updatedAt: number;
   lastLoginAt: number | null;
+  authToken: string | null;
+  authExp: number | null;
+  savedPassword: string | null;
+  savedPasswordUpdatedAt: number | null;
   metadataJson: string | null;
   deepseek: string | null;
   openai: string | null;
@@ -147,6 +151,71 @@ export class AccountRepository {
 
   get(accountId: string): AccountRecord {
     return requireRecord(this.db.select().from(accounts).where(eq(accounts.id, accountId)).get(), `Unknown account: ${accountId}`);
+  }
+
+  getLatestAuthSession(nowSeconds = Math.floor(Date.now() / 1000)): AccountRecord | null {
+    return this.db
+      .select()
+      .from(accounts)
+      .where(and(isNotNull(accounts.authToken), isNotNull(accounts.authExp)))
+      .orderBy(desc(accounts.lastLoginAt))
+      .all()
+      .find((account) => typeof account.authToken === 'string' && typeof account.authExp === 'number' && account.authExp > nowSeconds) ?? null;
+  }
+
+  getLatestSavedPasswordAccount(): AccountRecord | null {
+    return this.db
+      .select()
+      .from(accounts)
+      .where(and(isNotNull(accounts.email), isNotNull(accounts.savedPassword)))
+      .orderBy(desc(accounts.savedPasswordUpdatedAt), desc(accounts.lastLoginAt))
+      .limit(1)
+      .get() ?? null;
+  }
+
+  saveAuthSession(accountId: string, input: { token: string; exp: number; savedPassword?: string | null }): AccountRecord {
+    const now = Date.now();
+    this.db
+      .update(accounts)
+      .set({
+        authToken: input.token,
+        authExp: input.exp,
+        savedPassword: input.savedPassword ?? null,
+        savedPasswordUpdatedAt: input.savedPassword ? now : null,
+        updatedAt: now,
+        lastLoginAt: now,
+      })
+      .where(eq(accounts.id, accountId))
+      .run();
+    return this.get(accountId);
+  }
+
+  clearAuthSession(accountId: string): void {
+    this.db
+      .update(accounts)
+      .set({
+        authToken: null,
+        authExp: null,
+        savedPassword: null,
+        savedPasswordUpdatedAt: null,
+        updatedAt: Date.now(),
+      })
+      .where(eq(accounts.id, accountId))
+      .run();
+  }
+
+  clearAuthSessionByEmail(email: string): void {
+    this.db
+      .update(accounts)
+      .set({
+        authToken: null,
+        authExp: null,
+        savedPassword: null,
+        savedPasswordUpdatedAt: null,
+        updatedAt: Date.now(),
+      })
+      .where(eq(accounts.email, email))
+      .run();
   }
 
   updateAiConfig(accountId: string, field: 'deepseek' | 'openai', value: unknown): AccountRecord {

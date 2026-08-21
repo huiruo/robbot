@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type { RuntimeServices } from '../runtime';
 import type { HarnessRunInput, HarnessWarmupInput } from '../main/harness/harness-service';
+import type { AccountRecord } from '../storage/repositories';
 
 export interface SaveWorkspaceInput {
   accountId: string;
@@ -29,6 +30,7 @@ export function registerIpcHandlers(services: RuntimeServices): void {
   });
 
   ipcMain.handle('auth:get-current', () => services.auth.getCurrentUser());
+  ipcMain.handle('auth:get-saved-login', () => services.auth.getSavedLogin());
   ipcMain.handle('auth:login', async (_event, input: { email: string; password: string }) => {
     const previous = services.auth.getCurrentUser();
     const next = await services.auth.login(input);
@@ -53,14 +55,14 @@ export function registerIpcHandlers(services: RuntimeServices): void {
     }
   });
 
-  ipcMain.handle('account:get-current', () => services.auth.requireCurrentAccount());
+  ipcMain.handle('account:get-current', () => sanitizeAccount(services.auth.requireCurrentAccount()));
   ipcMain.handle('account:update-ai-config', (_event, field: 'deepseek' | 'openai', value: unknown) => {
     const account = services.auth.requireCurrentAccount();
-    return services.accounts.updateAiConfig(account.id, field, value);
+    return sanitizeAccount(services.accounts.updateAiConfig(account.id, field, value));
   });
   ipcMain.handle('account:select-ai', (_event, selectedAi: 'deepseek' | 'openai' | null) => {
     const account = services.auth.requireCurrentAccount();
-    return services.accounts.selectAi(account.id, selectedAi);
+    return sanitizeAccount(services.accounts.selectAi(account.id, selectedAi));
   });
   ipcMain.handle('account:reset-harness', () => services.harness.resetForAccount(services.auth.requireCurrentUser().id));
 
@@ -138,6 +140,11 @@ function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send(channel, payload);
   }
+}
+
+function sanitizeAccount(account: AccountRecord): Omit<AccountRecord, 'authToken' | 'authExp' | 'savedPassword' | 'savedPasswordUpdatedAt'> {
+  const { authToken: _authToken, authExp: _authExp, savedPassword: _savedPassword, savedPasswordUpdatedAt: _savedPasswordUpdatedAt, ...safeAccount } = account;
+  return safeAccount;
 }
 
 function requireCurrentAccountId(services: RuntimeServices, requestedAccountId?: string): string {

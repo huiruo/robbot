@@ -17,6 +17,10 @@ export const accounts = sqliteTable(
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
     lastLoginAt: integer('last_login_at'),
+    authToken: text('auth_token'),
+    authExp: integer('auth_exp'),
+    savedPassword: text('saved_password'),
+    savedPasswordUpdatedAt: integer('saved_password_updated_at'),
     metadataJson: text('metadata_json'),
     /*
     {

@@ -128,6 +128,15 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS session_events_session_seq_idx ON session_events(session_id, seq);
     `,
   },
+  {
+    id: '0009_account_persistent_auth',
+    sql: `
+      ALTER TABLE accounts ADD COLUMN auth_token TEXT;
+      ALTER TABLE accounts ADD COLUMN auth_exp INTEGER;
+      ALTER TABLE accounts ADD COLUMN saved_password TEXT;
+      ALTER TABLE accounts ADD COLUMN saved_password_updated_at INTEGER;
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: BetterSqlite3.Database): void {

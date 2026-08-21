@@ -43,6 +43,11 @@ export interface AuthUser {
   avatar?: string | null;
 }
 
+export interface SavedLogin {
+  email: string;
+  password: string;
+}
+
 export interface DshWebViewTarget {
   url: string;
   partition: string;
@@ -205,6 +210,7 @@ export interface RobbotApi {
   };
   auth: {
     getCurrent: () => Promise<AuthUser | null>;
+    getSavedLogin: () => Promise<SavedLogin | null>;
     login: (input: { email: string; password: string }) => Promise<AuthUser>;
     register: (input: { email: string; password: string }) => Promise<AuthUser>;
     logout: () => Promise<void>;

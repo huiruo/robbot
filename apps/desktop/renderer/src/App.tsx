@@ -10,6 +10,12 @@ button[class*="brand"] svg {
   display: none !important;
 }
 
+button[class*="brand"] span[class*="brandName"],
+button[class*="brand"] [data-slot="sidebar.brand.name"],
+button:has([data-slot="sidebar.brand.name"]) span[class*="brandName"] {
+  display: none !important;
+}
+
 button[class*="brand"]::before {
   content: "Robbot";
   color: currentColor;
@@ -17,11 +23,11 @@ button[class*="brand"]::before {
   letter-spacing: 0;
 }
 
-div[class*="collapsed"] button[class*="toggle"] svg[class*="railFish"] {
+button[class*="toggle"]:has([data-slot="sidebar.brand.mark"]) [data-slot="sidebar.brand.mark"] svg {
   display: none !important;
 }
 
-div[class*="collapsed"] button[class*="toggle"]::before {
+button[class*="toggle"]:has([data-slot="sidebar.brand.mark"])::before {
   content: "R";
   display: grid;
   width: 24px;
@@ -34,7 +40,7 @@ div[class*="collapsed"] button[class*="toggle"]::before {
   letter-spacing: 0;
 }
 
-div[class*="collapsed"] button[class*="toggle"]:hover::before {
+button[class*="toggle"]:has([data-slot="sidebar.brand.mark"]):hover::before {
   display: none;
 }
 
@@ -145,7 +151,8 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
   const saveSettings = async (field: 'deepseek' | 'openai', value: Record<string, unknown>) => {
     setDshTarget(null)
     setViewNonce((nonce) => nonce + 1)
-    setAccount(await window.robbot.account.updateAiConfig(field, value))
+    await window.robbot.account.updateAiConfig(field, value)
+    setAccount(await window.robbot.account.selectAi(field))
     await window.robbot.account.resetHarness()
     setSettingsOpen(false)
     await loadDsh()
@@ -182,21 +189,7 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
           </div>
         </header>
         <section className="relative min-h-0 bg-[#f7f8fa]">
-          {settingsOpen ? (
-            <SettingsModal
-              key="settings-page"
-              open
-              variant="page"
-              email={account?.email ?? user.email ?? ''}
-              deepseek={account?.deepseek ?? null}
-              openai={account?.openai ?? null}
-              selectedAi={account?.selectedAi ?? null}
-              onClose={() => setSettingsOpen(false)}
-              onSave={saveSettings}
-              onSelect={selectAi}
-              onLogout={() => { setSettingsOpen(false); void logout() }}
-            />
-          ) : dshTarget ? (
+          {dshTarget ? (
             <webview
               ref={(node) => {
                 webviewRef.current = node as DshWebviewElement | null
@@ -223,6 +216,23 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
               </div>
             </div>
           )}
+          {settingsOpen ? (
+            <div className="absolute inset-0 z-10">
+              <SettingsModal
+                key="settings-page"
+                open
+                variant="page"
+                email={account?.email ?? user.email ?? ''}
+                deepseek={account?.deepseek ?? null}
+                openai={account?.openai ?? null}
+                selectedAi={account?.selectedAi ?? null}
+                onClose={() => setSettingsOpen(false)}
+                onSave={saveSettings}
+                onSelect={selectAi}
+                onLogout={() => { setSettingsOpen(false); void logout() }}
+              />
+            </div>
+          ) : null}
         </section>
       </main>
     </>

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, net } from 'electron';
+import { app, net, safeStorage } from 'electron';
 import type { AccountRecord, AccountRepository } from '../../storage/repositories';
 
 export interface AuthUser {
@@ -30,6 +30,11 @@ interface CurrentAuthSession {
   user: AuthUser;
 }
 
+export interface SavedLogin {
+  email: string;
+  password: string;
+}
+
 export class AuthError extends Error {
   readonly code: 'UNAUTHENTICATED' | 'AUTH_FAILED';
 
@@ -43,7 +48,9 @@ export class AuthError extends Error {
 export class AuthSessionService {
   private current: CurrentAuthSession | null = null;
 
-  constructor(private readonly accounts: AccountRepository) {}
+  constructor(private readonly accounts: AccountRepository) {
+    this.current = this.restoreCurrentSession();
+  }
 
   getCurrentUser(): AuthUser | null {
     if (!this.current || Date.now() >= this.current.exp * 1000) {
@@ -76,12 +83,33 @@ export class AuthSessionService {
   }
 
   logout(): void {
+    const current = this.getCurrentUser();
+    if (current) {
+      this.accounts.clearAuthSession(current.id);
+    }
     this.current = null;
+  }
+
+  getSavedLogin(): SavedLogin | null {
+    if (this.getCurrentUser()) {
+      return null;
+    }
+
+    const account = this.accounts.getLatestSavedPasswordAccount();
+    if (!account?.email || !account.savedPassword) {
+      return null;
+    }
+
+    const password = decryptPassword(account.savedPassword);
+    return password ? { email: account.email, password } : null;
   }
 
   private async authenticate(pathname: string, input: { email: string; password: string }): Promise<AuthUser> {
     const response = await remoteAuth(pathname, input);
     if (response.code !== 1 || !response.data?.token || !response.data?.exp || !response.data?.user?.id) {
+      if (pathname === '/api/auth/login' && shouldClearSavedLogin(response)) {
+        this.accounts.clearAuthSessionByEmail(input.email);
+      }
       throw new AuthError(response.msg || 'Authentication failed.', 'AUTH_FAILED');
     }
 
@@ -97,8 +125,55 @@ export class AuthSessionService {
       username: user.username,
       avatar: user.avatar,
     });
+    this.accounts.saveAuthSession(user.id, {
+      token: response.data.token,
+      exp: response.data.exp,
+      savedPassword: encryptPassword(input.password),
+    });
 
     return user;
+  }
+
+  private restoreCurrentSession(): CurrentAuthSession | null {
+    const account = this.accounts.getLatestAuthSession();
+    if (!account?.authToken || !account.authExp) {
+      return null;
+    }
+
+    return {
+      token: account.authToken,
+      exp: account.authExp,
+      user: {
+        id: account.id,
+        email: account.email ?? '',
+        username: account.username ?? '',
+        avatar: account.avatar,
+      },
+    };
+  }
+}
+
+function shouldClearSavedLogin(response: AuthResult<AuthResponse>): boolean {
+  return response.hasResponse !== false && /invalid email or password/i.test(response.msg);
+}
+
+function encryptPassword(password: string): string | null {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return null;
+  }
+
+  return safeStorage.encryptString(password).toString('base64');
+}
+
+function decryptPassword(encrypted: string): string | null {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return null;
+  }
+
+  try {
+    return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
+  } catch {
+    return null;
   }
 }
 

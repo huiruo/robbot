@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('robbot', {
   },
   auth: {
     getCurrent: () => ipcRenderer.invoke('auth:get-current'),
+    getSavedLogin: () => ipcRenderer.invoke('auth:get-saved-login'),
     login: (input: unknown) => ipcRenderer.invoke('auth:login', input),
     register: (input: unknown) => ipcRenderer.invoke('auth:register', input),
     logout: () => ipcRenderer.invoke('auth:logout'),

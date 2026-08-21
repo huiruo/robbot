@@ -38,7 +38,7 @@ export class DshProcess {
         ? ['--import', 'tsx', bin, this.configPath]
         : this.protocol === 'acp'
           ? ['--import', 'tsx', bin, '--config', this.configPath]
-          : ['--import', 'tsx/esm', bin, 'web', '--host', '127.0.0.1', '--port', envPort(this.envOverrides)];
+          : ['--import', 'tsx/esm', bin, 'web', '--host', '127.0.0.1', '--port', envPort(this.envOverrides), '--no-open'];
     console.info('[robbot:dsh-process] starting DSH process', {
       cwd: this.cwd,
       protocol: this.protocol,
@@ -256,7 +256,7 @@ function builtCliArgs(
   envOverrides: Record<string, string | undefined>,
 ): string[] {
   if (protocol === 'web') {
-    return [bin, 'web', '--host', '127.0.0.1', '--port', envPort(envOverrides)];
+    return [bin, 'web', '--host', '127.0.0.1', '--port', envPort(envOverrides), '--no-open'];
   }
   if (protocol === 'sdk') {
     return [bin, configPath];

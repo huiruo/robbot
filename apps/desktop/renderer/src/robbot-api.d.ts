@@ -209,6 +209,8 @@ export interface CreateSessionInput {
 
 export interface RobbotApi {
   app: {
+    showMainWindow: () => void;
+    showLoginWindow: () => void;
     isPackaged: boolean;
     platform: string;
     arch: string;

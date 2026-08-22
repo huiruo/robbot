@@ -21,6 +21,7 @@
     "make": "npm run build && node scripts/forge-runtime-package.mjs make",
     "make:mac": "npm run build && node scripts/forge-runtime-package.mjs make --platform darwin --arch arm64",
     "make:win": "node scripts/verify-target.mjs win32 x64 && npm run installer:assets && npm run dsh:setup && npm run build && node scripts/forge-runtime-package.mjs make --platform win32 --arch x64",
+    "make:win:nsis": "node scripts/verify-target.mjs win32 x64 && npm run installer:assets && npm run dsh:setup && npm run build && node scripts/forge-runtime-package.mjs package --platform win32 --arch x64 && electron-builder --win nsis --x64 --prepackaged out/Robbot-win32-x64 --config electron-builder.nsis.yml",
     "release:mac": "npm run make:mac",
     "release:win": "npm run make:win",
     "publish:win": "node scripts/verify-target.mjs win32 x64 && npm run installer:assets && npm run dsh:setup && npm run build && node scripts/forge-runtime-package.mjs publish --platform win32 --arch x64",
@@ -50,6 +51,7 @@
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.10",
     "electron": "43.4.1",
+    "electron-builder": "^26.0.12",
     "nodemon": "^3.1.14",
     "typescript": "^7.0.2",
     "wait-on": "^9.1.0"

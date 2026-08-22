@@ -206,12 +206,22 @@ async function remoteAuth(pathname: string, input: { email: string; password: st
 }
 
 function apiBaseUrl(): string {
-  const configured = process.env.ROBBOT_API_URL
-    ?? process.env.PUBLIC_API_URL
-    ?? envFileValue('ROBBOT_API_URL')
-    ?? envFileValue('PUBLIC_API_URL')
+  const configured = firstNonEmpty(
+    process.env.ROBBOT_API_URL,
+    process.env.PUBLIC_API_URL,
+    envFileValue('ROBBOT_API_URL'),
+    envFileValue('PUBLIC_API_URL'),
+  )
     ?? 'http://localhost:3800';
   return `${configured.replace(/\/$/, '')}/`;
+}
+
+function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
 }
 
 function envFileValue(name: string): string | undefined {

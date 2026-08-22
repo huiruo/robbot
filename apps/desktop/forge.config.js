@@ -352,6 +352,7 @@ function copyRobbotRuntimeResources(outputPaths) {
     for (const resourceDir of resourceDirsForPackageOutput(outputPath)) {
       console.log(`[robbot:package] copying Robbot config to ${path.join(resourceDir, 'config')}`);
       copyRobbotConfig(configSource, path.join(resourceDir, 'config'));
+      writeRobbotRuntimeEnv(resourceDir);
       console.log(`[robbot:package] copying DSH runtime bundle to ${path.join(resourceDir, 'dsh-runtime')}`);
       const packagedDshRuntime = path.join(resourceDir, 'dsh-runtime');
       copyDirectory(dshRuntimeSource, packagedDshRuntime, { verbatimSymlinks: true });
@@ -443,6 +444,73 @@ function copyRobbotConfig(sourcePath, targetPath) {
     buildRequired: false,
     configPath: '../config/dsh-sdk-flash.cordis.yml',
   }, null, 2)}\n`);
+}
+
+function writeRobbotRuntimeEnv(resourceDir) {
+  const repoRoot = path.resolve(__dirname, '../..');
+  const publicApiUrl = firstNonEmptyValue(
+    process.env.PUBLIC_API_URL,
+    readDotEnvValue(path.join(__dirname, 'renderer', '.env'), 'PUBLIC_API_URL'),
+    readDotEnvValue(path.join(repoRoot, '.env'), 'PUBLIC_API_URL'),
+  );
+  const robbotApiUrl = firstNonEmptyValue(
+    process.env.ROBBOT_API_URL,
+    readDotEnvValue(path.join(__dirname, '.env'), 'ROBBOT_API_URL'),
+    readDotEnvValue(path.join(repoRoot, '.env'), 'ROBBOT_API_URL'),
+    publicApiUrl,
+  );
+
+  if (!publicApiUrl && !robbotApiUrl) {
+    console.warn('[robbot:package] PUBLIC_API_URL/ROBBOT_API_URL is not configured for packaged auth');
+    return;
+  }
+
+  const lines = [];
+  if (publicApiUrl) {
+    lines.push(`PUBLIC_API_URL=${publicApiUrl}`);
+  }
+  if (robbotApiUrl) {
+    lines.push(`ROBBOT_API_URL=${robbotApiUrl}`);
+  }
+
+  const envTarget = path.join(resourceDir, '.env');
+  fsSync.writeFileSync(envTarget, `${lines.join('\n')}\n`);
+  console.log(`[robbot:package] wrote packaged auth env to ${envTarget}`);
+}
+
+function firstNonEmptyValue(...values) {
+  for (const value of values) {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return undefined;
+}
+
+function readDotEnvValue(filename, name) {
+  if (!fsSync.existsSync(filename)) {
+    return undefined;
+  }
+
+  const prefix = `${name}=`;
+  for (const line of fsSync.readFileSync(filename, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || !trimmed.startsWith(prefix)) {
+      continue;
+    }
+
+    return unquoteDotEnvValue(trimmed.slice(prefix.length).trim());
+  }
+
+  return undefined;
+}
+
+function unquoteDotEnvValue(value) {
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+  return value;
 }
 
 function ensureGitignoreForAsar(buildPath, _electronVersion, _platform, _arch, callback) {

@@ -8,6 +8,7 @@ export type DshRuntimeStatus = 'missing' | 'not_installed' | 'ready' | 'running'
 
 export class DshRuntimeManager {
   private readonly processes = new Map<string, DshProcess>();
+  private readonly starting = new Map<string, Promise<DshProcess>>();
 
   constructor(private readonly resolver = new DshRuntimeResolver()) {}
 
@@ -35,26 +36,43 @@ export class DshRuntimeManager {
     const selectedProtocol = protocol ?? runtime.config.protocol;
     const processKey = `${selectedProtocol}:${sessionId}`;
     const existing = this.processes.get(processKey);
-    if (existing) {
+    if (existing?.isRunning()) {
       return existing;
     }
+    if (existing) {
+      this.processes.delete(processKey);
+    }
+    const pending = this.starting.get(processKey);
+    if (pending) {
+      return pending;
+    }
 
-    const processHandle = new DshProcess(
-      runtime.root,
-      selectedProtocol,
-      process.env.ROBBOT_DSH_CONFIG ?? configPathForProtocol(selectedProtocol, runtime.config.protocol, runtime.config.configPath),
-      envOverrides,
-    );
-    await processHandle.start();
-    this.processes.set(processKey, processHandle);
-    return processHandle;
+    const startPromise = (async () => {
+      const processHandle = new DshProcess(
+        runtime.root,
+        selectedProtocol,
+        process.env.ROBBOT_DSH_CONFIG ?? configPathForProtocol(selectedProtocol, runtime.config.protocol, runtime.config.configPath),
+        envOverrides,
+      );
+      await processHandle.start();
+      this.processes.set(processKey, processHandle);
+      return processHandle;
+    })();
+    this.starting.set(processKey, startPromise);
+    try {
+      return await startPromise;
+    } finally {
+      this.starting.delete(processKey);
+    }
   }
 
   async stop(sessionId: string, protocol?: DshProcessProtocol): Promise<void> {
     const runtime = this.resolveRuntime();
     const selectedProtocol = protocol ?? runtime.config.protocol;
     const processKey = `${selectedProtocol}:${sessionId}`;
-    const processHandle = this.processes.get(processKey);
+    const pending = this.starting.get(processKey);
+    this.starting.delete(processKey);
+    const processHandle = this.processes.get(processKey) ?? await pending?.catch(() => undefined);
     if (!processHandle) {
       return;
     }

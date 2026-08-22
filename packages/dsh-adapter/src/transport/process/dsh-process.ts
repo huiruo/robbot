@@ -11,6 +11,7 @@ export type DshProcessProtocol = 'sdk' | 'acp' | 'web';
 export class DshProcess {
   private child?: ChildProcessWithoutNullStreams;
   private channel?: StdioChannel;
+  private exited = false;
   constructor(
     private readonly cwd: string,
     private readonly protocol: DshProcessProtocol,
@@ -22,6 +23,7 @@ export class DshProcess {
     if (this.channel) {
       return this.channel;
     }
+    this.exited = false;
 
     const nodeExecutable = resolveNodeExecutable();
     const builtCli = isBuiltCliRuntime(this.cwd);
@@ -95,6 +97,9 @@ export class DshProcess {
 
     this.child.once('exit', (code, signal) => {
       console.info('[robbot:dsh-process] DSH process exited', { protocol: this.protocol, code, signal });
+      this.exited = true;
+      this.child = undefined;
+      this.channel = undefined;
     });
 
     this.child.stderr.setEncoding('utf8');
@@ -104,6 +109,10 @@ export class DshProcess {
 
     this.channel = new StdioChannel(this.child.stdin, this.child.stdout, this.child.stderr);
     return this.channel;
+  }
+
+  isRunning(): boolean {
+    return Boolean(this.child && !this.child.killed && !this.exited);
   }
 
   getChannel(): StdioChannel {
@@ -148,6 +157,7 @@ export class DshProcess {
       pid: child.pid,
       elapsedMs: Date.now() - startedAt,
     });
+    this.exited = true;
     this.child = undefined;
     this.channel = undefined;
   }

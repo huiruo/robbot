@@ -15,6 +15,9 @@ export class WebTransport implements HarnessTransport {
   private readonly approvals = new Map<string, { rpcId: string; approvalId: string }>();
   private started = false;
   private runtimeFingerprint = '';
+  private startPromise?: Promise<void>;
+  private startingFingerprint = '';
+  private startVersion = 0;
   private readonly port = 3187 + (process.pid % 1000);
 
   constructor(private readonly runtimeManager: DshRuntimeManager) {}
@@ -106,11 +109,34 @@ export class WebTransport implements HarnessTransport {
       : undefined;
     const fingerprint = runtimeFingerprint(metadata, dshHome);
     if (this.started && this.runtimeFingerprint === fingerprint) return;
+    if (this.startPromise && this.startingFingerprint === fingerprint) {
+      return this.startPromise;
+    }
+    if (this.startPromise && this.startingFingerprint !== fingerprint) {
+      await this.runtimeManager.stop(this.processSessionId, 'web');
+      this.started = false;
+      this.sessions.clear();
+    }
     if (this.started && this.runtimeFingerprint !== fingerprint) {
       await this.runtimeManager.stop(this.processSessionId, 'web');
       this.started = false;
       this.sessions.clear();
     }
+    this.startingFingerprint = fingerprint;
+    const version = ++this.startVersion;
+    const startPromise = this.startServer(metadata, dshHome, fingerprint, version);
+    this.startPromise = startPromise;
+    try {
+      await startPromise;
+    } finally {
+      if (this.startPromise === startPromise) {
+        this.startPromise = undefined;
+        this.startingFingerprint = '';
+      }
+    }
+  }
+
+  private async startServer(metadata: Record<string, unknown> | undefined, dshHome: string | undefined, fingerprint: string, version: number): Promise<void> {
     const runtime = this.runtimeManager.resolveRuntime();
     await this.runtimeManager.start(this.processSessionId, 'web', {
       ROBBOT_DSH_WEB_PORT: String(this.port),
@@ -122,9 +148,12 @@ export class WebTransport implements HarnessTransport {
     while (Date.now() < deadline) {
       try {
         const response = await fetch(`${base}/api/session.list`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method: 'session.list', payload: {} }) });
-        if (response.ok) { this.started = true; this.runtimeFingerprint = fingerprint; return; }
+        if (response.ok && version === this.startVersion) { this.started = true; this.runtimeFingerprint = fingerprint; return; }
       } catch { /* wait for webserver */ }
       await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (version === this.startVersion) {
+      await this.runtimeManager.stop(this.processSessionId, 'web').catch(() => undefined);
     }
     throw new HarnessError('DSH Desktop web host did not become ready.', 'transport_error');
   }

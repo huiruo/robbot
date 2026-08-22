@@ -46,7 +46,28 @@ async function bootstrap(): Promise<void> {
     if (event.sender !== mainWindow?.webContents) return;
 
     const oldMainWindow = mainWindow;
+    oldMainWindow.hide();
     mainWindow = null;
+    loginWindow = await createLoginWindow();
+    loginWindow.on('closed', () => { loginWindow = null; });
+    oldMainWindow.destroy();
+  });
+
+  ipcMain.handle('robbot:logout-and-show-login-window', async (event) => {
+    if (event.sender !== mainWindow?.webContents) return;
+
+    const oldMainWindow = mainWindow;
+    oldMainWindow.hide();
+    mainWindow = null;
+
+    const current = services.auth.getCurrentUser();
+    services.auth.logout();
+    if (current) {
+      void services.harness.resetForAccount(current.id).catch((cause) => {
+        console.warn('Failed to reset DSH runtime after logout:', cause);
+      });
+    }
+
     loginWindow = await createLoginWindow();
     loginWindow.on('closed', () => { loginWindow = null; });
     oldMainWindow.destroy();

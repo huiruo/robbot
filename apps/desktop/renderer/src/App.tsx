@@ -70,7 +70,7 @@ function App() {
   if (!booted) return <div className="grid h-full place-items-center text-sm text-slate-500">Loading...</div>
   if (windowKind === 'login') return <LoginPage onDone={() => { window.robbot.app.showMainWindow() }} />
   if (!user) return <LoginRedirect />
-  return <AuthenticatedApp user={user} onLoggedOut={() => { window.robbot.app.showLoginWindow() }} />
+  return <AuthenticatedApp user={user} />
 }
 
 function LoginRedirect() {
@@ -81,14 +81,13 @@ function LoginRedirect() {
   return <div className="grid h-full place-items-center text-sm text-slate-500">Loading...</div>
 }
 
-function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: () => void }) {
+function AuthenticatedApp({ user }: { user: AuthUser }) {
   const [account, setAccount] = useState<AccountRecord | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dshTarget, setDshTarget] = useState<DshWebViewTarget | null>(null)
   const [viewNonce, setViewNonce] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [signingOut, setSigningOut] = useState(false)
   const webviewRef = useRef<DshWebviewElement | null>(null)
   const desktopUpdate = useDesktopUpdateCheck(Boolean(user.id))
 
@@ -118,17 +117,7 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
 
   const logout = async () => {
     if (!window.confirm('Are you sure you want to sign out?')) return
-    setSigningOut(true)
-    const webview = webviewRef.current
-    if (webview) {
-      webview.setAttribute('src', 'about:blank')
-      webviewRef.current = null
-    }
-    setDshTarget(null)
-    setViewNonce((value) => value + 1)
-    await nextFrame()
-    await window.robbot.auth.logout()
-    onLoggedOut()
+    await window.robbot.app.logoutAndShowLoginWindow()
   }
 
   useEffect(() => {
@@ -263,19 +252,8 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
           ) : null}
         </section>
       </main>
-      {signingOut ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-white text-sm text-slate-500">
-          Signing out...
-        </div>
-      ) : null}
     </>
   )
-}
-
-function nextFrame() {
-  return new Promise<void>((resolve) => {
-    window.requestAnimationFrame(() => resolve())
-  })
 }
 
 function DshLoading() {

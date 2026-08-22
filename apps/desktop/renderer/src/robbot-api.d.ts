@@ -212,6 +212,7 @@ export interface RobbotApi {
     getWindowKind: () => 'login' | 'main';
     showMainWindow: () => void;
     showLoginWindow: () => void;
+    logoutAndShowLoginWindow: () => Promise<void>;
     isPackaged: boolean;
     platform: string;
     arch: string;

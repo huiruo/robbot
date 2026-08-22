@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('robbot', {
     getWindowKind: () => windowKind,
     showMainWindow: () => ipcRenderer.send('robbot:show-main-window'),
     showLoginWindow: () => ipcRenderer.send('robbot:show-login-window'),
+    logoutAndShowLoginWindow: () => ipcRenderer.invoke('robbot:logout-and-show-login-window'),
     isPackaged: process.env.NODE_ENV !== 'development',
     platform: process.platform,
     arch: process.arch,

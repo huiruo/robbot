@@ -101,8 +101,14 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
 
   const logout = async () => {
     if (!window.confirm('Are you sure you want to sign out?')) return
+    const webview = webviewRef.current
+    if (webview) {
+      webview.setAttribute('src', 'about:blank')
+      webviewRef.current = null
+    }
     setDshTarget(null)
     setViewNonce((value) => value + 1)
+    await nextFrame()
     await window.robbot.auth.logout()
     onLoggedOut()
   }
@@ -235,6 +241,12 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
       </main>
     </>
   )
+}
+
+function nextFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve())
+  })
 }
 
 function DshLoading() {

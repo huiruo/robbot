@@ -1,6 +1,6 @@
 import { Alert, Box, Button, IconButton, InputAdornment, Paper, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { Eye, EyeOff } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { AuthUser } from '../../robbot-api'
 
@@ -14,6 +14,7 @@ export function LoginPage(props: { onDone: (user: AuthUser) => void }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [savedLogin, setSavedLogin] = useState<{ email: string; password: string } | null>(null)
+  const emailInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -30,6 +31,14 @@ export function LoginPage(props: { onDone: (user: AuthUser) => void }) {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      emailInputRef.current?.focus()
+    }, 0)
+
+    return () => window.clearTimeout(timer)
   }, [])
 
   const submit = async (event: FormEvent) => {
@@ -166,6 +175,7 @@ export function LoginPage(props: { onDone: (user: AuthUser) => void }) {
       <Box sx={{ display: 'grid', gap: 2 }}>
         {error ? <Alert severity="error" sx={{ borderRadius: '8px', fontSize: 13 }}>{error}</Alert> : null}
         <TextField
+          inputRef={emailInputRef}
           label="邮箱"
           value={email}
           onChange={(event) => setEmail(event.target.value)}

@@ -218,6 +218,7 @@ export interface RobbotApi {
   account: {
     getCurrent: () => Promise<AccountRecord>;
     updateAiConfig: (field: 'deepseek' | 'openai', value: unknown) => Promise<AccountRecord>;
+    saveAndSelectAi: (field: 'deepseek' | 'openai', value: unknown) => Promise<AccountRecord>;
     selectAi: (selectedAi: 'deepseek' | 'openai' | null) => Promise<AccountRecord>;
     resetHarness: () => Promise<void>;
   };

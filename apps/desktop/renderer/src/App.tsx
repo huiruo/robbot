@@ -151,9 +151,7 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
   const saveSettings = async (field: 'deepseek' | 'openai', value: Record<string, unknown>) => {
     setDshTarget(null)
     setViewNonce((nonce) => nonce + 1)
-    await window.robbot.account.updateAiConfig(field, value)
-    setAccount(await window.robbot.account.selectAi(field))
-    await window.robbot.account.resetHarness()
+    setAccount(await window.robbot.account.saveAndSelectAi(field, value))
     setSettingsOpen(false)
     await loadDsh()
   }

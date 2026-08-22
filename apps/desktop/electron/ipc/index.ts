@@ -60,6 +60,13 @@ export function registerIpcHandlers(services: RuntimeServices): void {
     const account = services.auth.requireCurrentAccount();
     return sanitizeAccount(services.accounts.updateAiConfig(account.id, field, value));
   });
+  ipcMain.handle('account:save-and-select-ai', async (_event, field: 'deepseek' | 'openai', value: unknown) => {
+    const account = services.auth.requireCurrentAccount();
+    services.accounts.updateAiConfig(account.id, field, value);
+    const selected = services.accounts.selectAi(account.id, field);
+    await services.harness.resetForAccount(account.id);
+    return sanitizeAccount(selected);
+  });
   ipcMain.handle('account:select-ai', (_event, selectedAi: 'deepseek' | 'openai' | null) => {
     const account = services.auth.requireCurrentAccount();
     return sanitizeAccount(services.accounts.selectAi(account.id, selectedAi));

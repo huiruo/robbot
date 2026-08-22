@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('robbot', {
     getCurrent: () => ipcRenderer.invoke('account:get-current'),
     updateAiConfig: (field: 'deepseek' | 'openai', value: unknown) =>
       ipcRenderer.invoke('account:update-ai-config', field, value),
+    saveAndSelectAi: (field: 'deepseek' | 'openai', value: unknown) =>
+      ipcRenderer.invoke('account:save-and-select-ai', field, value),
     selectAi: (selectedAi: 'deepseek' | 'openai' | null) =>
       ipcRenderer.invoke('account:select-ai', selectedAi),
     resetHarness: () => ipcRenderer.invoke('account:reset-harness'),

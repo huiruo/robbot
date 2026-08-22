@@ -98,22 +98,10 @@ export function SettingsModal(props: SettingsModalProps) {
   }
 
   const save = async (field: AiField) => {
-    let value: Record<string, unknown>
-
-    try {
-      value = JSON.parse(configs[field]) as Record<string, unknown>
-    } catch {
-      toast.error('保存失败：请输入有效的 JSON 对象')
+    const nextValue = nextConfigValue(field, configs, keys, selectedModels)
+    if (!nextValue) {
       return
     }
-
-    if (!value || Array.isArray(value) || typeof value !== 'object') {
-      toast.error('保存失败：配置必须是 JSON 对象')
-      return
-    }
-
-    const key = keys[field].trim()
-    const nextValue = normalizeConfig(value, key, selectedModels[field])
 
     if (stableStringify(nextValue) === stableStringify(initialValues[field])) {
       toast.info('没有修改，无需保存')
@@ -138,10 +126,20 @@ export function SettingsModal(props: SettingsModalProps) {
       return
     }
 
+    const nextValue = nextConfigValue(field, configs, keys, selectedModels)
+    if (!nextValue) {
+      return
+    }
+
     setSelecting(field)
 
     try {
-      await props.onSelect(field)
+      if (stableStringify(nextValue) !== stableStringify(initialValues[field])) {
+        await props.onSave(field, nextValue)
+        toast.success(`${field === 'deepseek' ? 'DeepSeek' : 'ChatGPT'} 配置保存成功`)
+      } else {
+        await props.onSelect(field)
+      }
     } finally {
       setSelecting(null)
     }
@@ -355,6 +353,24 @@ export function SettingsModal(props: SettingsModalProps) {
       {content}
     </div>
   )
+}
+
+function nextConfigValue(field: AiField, configs: Record<AiField, string>, keys: Record<AiField, string>, selectedModels: Record<AiField, string>): Record<string, unknown> | null {
+  let value: Record<string, unknown>
+
+  try {
+    value = JSON.parse(configs[field]) as Record<string, unknown>
+  } catch {
+    toast.error('保存失败：请输入有效的 JSON 对象')
+    return null
+  }
+
+  if (!value || Array.isArray(value) || typeof value !== 'object') {
+    toast.error('保存失败：配置必须是 JSON 对象')
+    return null
+  }
+
+  return normalizeConfig(value, keys[field].trim(), selectedModels[field])
 }
 
 function normalizeConfig(value: Record<string, unknown>, key: string, model: string): Record<string, unknown> {

@@ -18,6 +18,10 @@ function getIconPath(): string {
   return path.join(app.getAppPath(), 'assets/icon.png');
 }
 
+export function getPreloadPathForWindow(): string {
+  return getPreloadPath()
+}
+
 export async function createMainWindow(): Promise<BrowserWindow> {
   const iconPath = getIconPath();
 
@@ -53,5 +57,29 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     win.webContents.openDevTools({ mode: 'detach' });
   }
 
+  return win;
+}
+
+export async function createLoginWindow(): Promise<BrowserWindow> {
+  const win = new BrowserWindow({
+    width: 1180,
+    height: 780,
+    icon: getIconPath(),
+    autoHideMenuBar: process.platform !== 'darwin',
+    webPreferences: {
+      preload: getPreloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: false,
+    },
+  });
+
+  if (process.platform !== 'darwin') {
+    win.setMenu(null);
+    win.setMenuBarVisibility(false);
+  }
+
+  if (rendererDevUrl) await win.loadURL(rendererDevUrl);
+  else await win.loadFile(getRendererHtmlPath());
   return win;
 }

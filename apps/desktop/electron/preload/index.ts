@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('robbot', {
   app: {
+    showMainWindow: () => ipcRenderer.send('robbot:show-main-window'),
+    showLoginWindow: () => ipcRenderer.send('robbot:show-login-window'),
     isPackaged: process.env.NODE_ENV !== 'development',
     platform: process.platform,
     arch: process.arch,

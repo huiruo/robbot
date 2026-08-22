@@ -63,8 +63,8 @@ function App() {
   }, [])
 
   if (!booted) return <div className="grid h-full place-items-center text-sm text-slate-500">Loading...</div>
-  if (!user) return <LoginPage onDone={setUser} />
-  return <AuthenticatedApp user={user} onLoggedOut={() => setUser(null)} />
+  if (!user) return <LoginPage onDone={(nextUser) => { setUser(nextUser); window.robbot.app.showMainWindow() }} />
+  return <AuthenticatedApp user={user} onLoggedOut={() => { window.robbot.app.showLoginWindow() }} />
 }
 
 function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: () => void }) {

@@ -24,6 +24,8 @@ export interface AccountDshEnvironment {
   aiRuntime: AccountAiRuntime;
 }
 
+const webProfileMarkerVersion = 1;
+
 export class AccountDshEnvironmentService {
   resolve(account: AccountRecord): AccountDshEnvironment {
     const aiRuntime = aiRuntimeForAccount(account);
@@ -55,14 +57,40 @@ export class AccountDshEnvironmentService {
   }
 
   private sync(environment: AccountDshEnvironment): void {
+    const webProfilePath = path.join(environment.dshHome, 'profiles', 'web');
+
     fs.mkdirSync(environment.dshHome, { recursive: true });
-    fs.mkdirSync(path.join(environment.dshHome, 'profiles', 'web'), { recursive: true });
+    resetWebProfileIfNeeded(webProfilePath, environment.aiRuntime.fingerprint);
+    fs.mkdirSync(webProfilePath, { recursive: true });
     fs.writeFileSync(
       path.join(environment.dshHome, '.credentials.yaml'),
       credentialsYaml(environment.aiRuntime),
       { mode: 0o600 },
     );
+    fs.writeFileSync(
+      path.join(webProfilePath, '.robbot-profile.json'),
+      `${JSON.stringify({
+        version: webProfileMarkerVersion,
+        fingerprint: environment.aiRuntime.fingerprint,
+      }, null, 2)}\n`,
+    );
   }
+}
+
+function resetWebProfileIfNeeded(webProfilePath: string, fingerprint: string): void {
+  const markerPath = path.join(webProfilePath, '.robbot-profile.json');
+
+  try {
+    const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) as Record<string, unknown>;
+    if (marker.version === webProfileMarkerVersion && marker.fingerprint === fingerprint) {
+      return;
+    }
+  } catch {
+    // Missing or unreadable marker means this profile was created by an older
+    // Robbot build or by DSH itself. Recreate only the web profile, not dshHome.
+  }
+
+  fs.rmSync(webProfilePath, { force: true, recursive: true });
 }
 
 function aiRuntimeForAccount(account: AccountRecord): Omit<AccountAiRuntime, 'fingerprint'> | undefined {

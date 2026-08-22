@@ -6,6 +6,16 @@
 
 Robbot 是一个 **Electron + React + SQLite + DeepSeek Harness** 桌面应用。应用侧负责账号、配置、桌面壳和发布流程；Agent 会话、工具调用、审批、上下文等能力由 DSH runtime 提供。
 
+## 下载安装
+
+当前正式安装包支持 Windows x64 和 macOS arm64。无需额外环境，下载安装后一键使用。
+
+| 平台 | 下载 | 安装方式 |
+| --- | --- | --- |
+| Windows x64 | [下载 exe](https://github.com/huiruo/robbot/releases/download/v1.0.0/Robbot-windows-x64.zip) | 解压后运行 Robbot |
+| macOS arm64 | [下载 ZIP](https://github.com/huiruo/robbot/releases/download/v1.0.0/Robbot-darwin-arm64-1.0.0.zip) | 解压后安装 Robbot
+
+
 ## 架构
 
 ```mermaid
@@ -78,12 +88,6 @@ cd apps/desktop
 | `npm run make:mac` | 生成 macOS arm64 发布包 |
 | `npm run make:win` | 生成 Windows Squirrel 安装包 |
 | `npm run make:win:nsis` | 生成 Windows NSIS 安装包 |
-
-桌面端版本号在：
-
-```text
-apps/desktop/package.json
-```
 
 ## 项目结构
 

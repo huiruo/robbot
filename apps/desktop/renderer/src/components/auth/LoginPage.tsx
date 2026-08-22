@@ -87,14 +87,8 @@ export function LoginPage(props: { onDone: (user: AuthUser) => void }) {
     background: '#f7f8fa',
     color: '#0f1115',
   }}>
-    <Box component="header" sx={{
-      display: 'flex',
-      alignItems: 'center',
-      borderBottom: '1px solid rgb(226 232 240)',
-      background: '#ffffff',
-      px: 2.5,
-    }}>
-      <Box sx={{
+    <Box component="header">
+      {/* <Box sx={{
         display: 'grid',
         width: 24,
         height: 24,
@@ -106,7 +100,7 @@ export function LoginPage(props: { onDone: (user: AuthUser) => void }) {
         fontWeight: 700,
         lineHeight: 1,
       }}>R</Box>
-      <Typography sx={{ ml: 1.25, fontSize: 13, fontWeight: 600, color: '#111827' }}>Robbot</Typography>
+      <Typography sx={{ ml: 1.25, fontSize: 13, fontWeight: 600, color: '#111827' }}>Robbot</Typography> */}
     </Box>
     <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 0, p: 3 }}>
       <Paper
@@ -123,18 +117,6 @@ export function LoginPage(props: { onDone: (user: AuthUser) => void }) {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, mb: 2.5 }}>
-          <Box sx={{
-            display: 'grid',
-            width: 32,
-            height: 32,
-            placeItems: 'center',
-            borderRadius: '8px',
-            background: '#0f1115',
-            color: '#ffffff',
-            fontSize: 15,
-            fontWeight: 700,
-            lineHeight: 1,
-          }}>R</Box>
           <Box>
             <Typography sx={{ fontSize: 22, lineHeight: '28px', fontWeight: 700, letterSpacing: 0 }}>
               {mode === 'login' ? '欢迎回来' : '创建账号'}

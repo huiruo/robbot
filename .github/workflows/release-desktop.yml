@@ -177,9 +177,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish Windows Release
+      - name: Build Windows NSIS installer
         if: matrix.os == 'windows-2022'
-        run: pnpm --filter @robbot/desktop run publish:win
+        run: |
+          # Squirrel release flow, temporarily kept for rollback:
+          # pnpm --filter @robbot/desktop run publish:win
+          pnpm --filter @robbot/desktop run make:win:nsis
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -189,4 +192,6 @@ jobs:
         with:
           name: Robbot-windows-x64
           if-no-files-found: error
-          path: apps/desktop/out/make/**/*.exe
+          # Squirrel output, temporarily kept for rollback:
+          # path: apps/desktop/out/make/**/*.exe
+          path: apps/desktop/out/nsis/**/*.exe

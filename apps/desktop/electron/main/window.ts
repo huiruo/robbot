@@ -22,6 +22,12 @@ export function getPreloadPathForWindow(): string {
   return getPreloadPath()
 }
 
+export type RobbotWindowKind = 'login' | 'main';
+
+function getWindowArguments(kind: RobbotWindowKind): string[] {
+  return [`--robbot-window-kind=${kind}`];
+}
+
 export async function createMainWindow(): Promise<BrowserWindow> {
   const iconPath = getIconPath();
 
@@ -36,6 +42,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: {
       preload: getPreloadPath(),
+      additionalArguments: getWindowArguments('main'),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
@@ -64,10 +71,12 @@ export async function createLoginWindow(): Promise<BrowserWindow> {
   const win = new BrowserWindow({
     width: 1180,
     height: 780,
+    show: false,
     icon: getIconPath(),
     autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: {
       preload: getPreloadPath(),
+      additionalArguments: getWindowArguments('login'),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: false,
@@ -81,5 +90,6 @@ export async function createLoginWindow(): Promise<BrowserWindow> {
 
   if (rendererDevUrl) await win.loadURL(rendererDevUrl);
   else await win.loadFile(getRendererHtmlPath());
+  win.show();
   return win;
 }

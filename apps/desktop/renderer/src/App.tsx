@@ -55,16 +55,30 @@ type DshWebviewElement = HTMLElement & {
 }
 
 function App() {
+  const windowKind = window.robbot.app.getWindowKind()
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [booted, setBooted] = useState(false)
+  const [booted, setBooted] = useState(windowKind === 'login')
 
   useEffect(() => {
+    if (windowKind === 'login') {
+      return
+    }
+
     void window.robbot.auth.getCurrent().then(setUser).finally(() => setBooted(true))
-  }, [])
+  }, [windowKind])
 
   if (!booted) return <div className="grid h-full place-items-center text-sm text-slate-500">Loading...</div>
-  if (!user) return <LoginPage onDone={(nextUser) => { setUser(nextUser); window.robbot.app.showMainWindow() }} />
+  if (windowKind === 'login') return <LoginPage onDone={() => { window.robbot.app.showMainWindow() }} />
+  if (!user) return <LoginRedirect />
   return <AuthenticatedApp user={user} onLoggedOut={() => { window.robbot.app.showLoginWindow() }} />
+}
+
+function LoginRedirect() {
+  useEffect(() => {
+    window.robbot.app.showLoginWindow()
+  }, [])
+
+  return <div className="grid h-full place-items-center text-sm text-slate-500">Loading...</div>
 }
 
 function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: () => void }) {
@@ -74,6 +88,7 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
   const [viewNonce, setViewNonce] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [signingOut, setSigningOut] = useState(false)
   const webviewRef = useRef<DshWebviewElement | null>(null)
   const desktopUpdate = useDesktopUpdateCheck(Boolean(user.id))
 
@@ -103,6 +118,7 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
 
   const logout = async () => {
     if (!window.confirm('Are you sure you want to sign out?')) return
+    setSigningOut(true)
     const webview = webviewRef.current
     if (webview) {
       webview.setAttribute('src', 'about:blank')
@@ -247,6 +263,11 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
           ) : null}
         </section>
       </main>
+      {signingOut ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-white text-sm text-slate-500">
+          Signing out...
+        </div>
+      ) : null}
     </>
   )
 }

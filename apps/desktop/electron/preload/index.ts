@@ -1,7 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+const windowKind = process.argv
+  .find((arg) => arg.startsWith('--robbot-window-kind='))
+  ?.split('=')[1] === 'main'
+    ? 'main'
+    : 'login';
+
 contextBridge.exposeInMainWorld('robbot', {
   app: {
+    getWindowKind: () => windowKind,
     showMainWindow: () => ipcRenderer.send('robbot:show-main-window'),
     showLoginWindow: () => ipcRenderer.send('robbot:show-login-window'),
     isPackaged: process.env.NODE_ENV !== 'development',

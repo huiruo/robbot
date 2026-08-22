@@ -20,8 +20,18 @@ async function bootstrap(): Promise<void> {
     void services.dispose();
   });
 
-  loginWindow = await createLoginWindow();
-  loginWindow.on('closed', () => { loginWindow = null; });
+  const showStartupWindow = async () => {
+    if (services.auth.getCurrentUser()) {
+      mainWindow = await createMainWindow();
+      mainWindow.on('closed', () => { mainWindow = null; });
+      return;
+    }
+
+    loginWindow = await createLoginWindow();
+    loginWindow.on('closed', () => { loginWindow = null; });
+  };
+
+  await showStartupWindow();
 
   ipcMain.on('robbot:show-main-window', async (event) => {
     if (event.sender !== loginWindow?.webContents) return;
@@ -35,9 +45,7 @@ async function bootstrap(): Promise<void> {
   ipcMain.on('robbot:show-login-window', async (event) => {
     if (event.sender !== mainWindow?.webContents) return;
 
-    // Hide first so the old renderer can never paint during the hand-off.
     const oldMainWindow = mainWindow;
-    oldMainWindow.hide();
     mainWindow = null;
     loginWindow = await createLoginWindow();
     loginWindow.on('closed', () => { loginWindow = null; });
@@ -46,7 +54,7 @@ async function bootstrap(): Promise<void> {
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      loginWindow = await createLoginWindow();
+      await showStartupWindow();
     }
   });
 }

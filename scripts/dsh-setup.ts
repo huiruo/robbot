@@ -4,14 +4,20 @@ import path from 'node:path';
 
 const dshRoot = path.resolve('vendor/deepseek-harness');
 const corepackHome = path.resolve('.cache/corepack');
+const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 
 function exec(command: string, args: string[], options: { cwd?: string; capture?: boolean; allowFailure?: boolean } = {}): string {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     encoding: 'utf8',
     env: { ...process.env, CI: 'true', COREPACK_HOME: corepackHome },
+    shell: process.platform === 'win32',
     stdio: options.capture ? 'pipe' : 'inherit',
   });
+
+  if (result.error) {
+    console.error(`Failed to start ${command}: ${result.error.message}`);
+  }
 
   if (!options.allowFailure && result.status !== 0) {
     process.exit(result.status ?? 1);
@@ -52,5 +58,5 @@ if (!existsSync(path.join(dshRoot, 'package.json'))) {
 }
 
 prepareSubmoduleWorktreeConfig();
-exec('corepack', ['pnpm', 'install'], { cwd: dshRoot });
-exec('corepack', ['pnpm', 'run', 'build'], { cwd: dshRoot });
+exec(pnpmCommand, ['install'], { cwd: dshRoot });
+exec(pnpmCommand, ['run', 'build'], { cwd: dshRoot });

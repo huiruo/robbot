@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { LogOut, RefreshCw, Settings } from 'lucide-react'
 import { LoginPage } from './components/auth/LoginPage'
 import { SettingsModal } from './components/home/SettingsModal'
+import { useDesktopUpdateCheck } from './hooks/useDesktopUpdateCheck'
 import type { AccountRecord, AuthUser, DshWebViewTarget } from './robbot-api'
 import './App.css'
 
@@ -74,6 +75,7 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const webviewRef = useRef<DshWebviewElement | null>(null)
+  const desktopUpdate = useDesktopUpdateCheck(Boolean(user.id))
 
   useEffect(() => {
     void window.robbot.account.getCurrent().then(setAccount)
@@ -176,7 +178,7 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
       <main className="grid h-full min-h-0 grid-rows-[44px_minmax(0,1fr)] overflow-hidden bg-white">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-3">
           <div className="flex min-w-0 items-center gap-2">
-            <div className="grid h-6 w-6 place-items-center rounded-md bg-slate-950 text-[11px] font-semibold text-white">R</div>
+            {/* <div className="grid h-6 w-6 place-items-center rounded-md bg-slate-950 text-[11px] font-semibold text-white">R</div> */}
             <div className="truncate text-[13px] font-medium text-slate-700">Robbot — Personal AI powered by DeepSeek Harness</div>
             {loading ? <div className="status-pulse text-[12px] text-slate-400">Starting DSH...</div> : null}
           </div>
@@ -184,8 +186,11 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
             <button className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100" title="Reload DSH" onClick={() => void loadDsh()}>
               <RefreshCw className="h-4 w-4" />
             </button>
-            <button className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100" title="Settings" onClick={() => setSettingsOpen(true)}>
+            <button className="relative grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100" title="Settings" onClick={() => setSettingsOpen(true)}>
               <Settings className="h-4 w-4" />
+              {desktopUpdate.hasUpdate ? (
+                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500" />
+              ) : null}
             </button>
             <button className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100" title={account?.email ?? user.email ?? 'Sign out'} onClick={() => void logout()}>
               <LogOut className="h-4 w-4" />
@@ -230,6 +235,9 @@ function AuthenticatedApp({ user, onLoggedOut }: { user: AuthUser; onLoggedOut: 
                 deepseek={account?.deepseek ?? null}
                 openai={account?.openai ?? null}
                 selectedAi={account?.selectedAi ?? null}
+                appVersion={desktopUpdate.appVersion}
+                updateCheck={desktopUpdate.updateCheck}
+                onCheckUpdate={desktopUpdate.checkUpdate}
                 onClose={() => setSettingsOpen(false)}
                 onSave={saveSettings}
                 onSelect={selectAi}

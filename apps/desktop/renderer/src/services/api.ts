@@ -17,6 +17,14 @@ export interface AuthResponse {
   }
 }
 
+export interface DesktopUpdateCheckResult {
+  hasUpdate: boolean
+  latestVersion: string | null
+  downloadUrl: string | null
+  releaseNotes: string | null
+  forceUpdate: boolean
+}
+
 // Development requests use Vite's `/api` proxy; packaged builds call the configured API directly.
 const configuredApiUrl = import.meta.env.PUBLIC_API_URL?.trim() || 'http://localhost:3800'
 const apiBaseUrl = import.meta.env.DEV ? '/' : `${configuredApiUrl.replace(/\/$/, '')}/`
@@ -65,4 +73,17 @@ export function authLogin(data: { email: string; password: string }) {
 
 export function authRegister(data: { email: string; password: string }) {
   return request<AuthResponse>({ method: 'POST', url: '/api/auth/register', data, skipAuth: true })
+}
+
+export function checkDesktopUpdate(input: { platform: string; arch: string; version: string; channel?: string }) {
+  const params = new URLSearchParams({
+    platform: input.platform,
+    arch: input.arch,
+    version: input.version,
+    channel: input.channel || 'stable',
+  })
+  return request<DesktopUpdateCheckResult>({
+    method: 'GET',
+    url: `/api/robbot/desktop-version/check?${params.toString()}`,
+  })
 }

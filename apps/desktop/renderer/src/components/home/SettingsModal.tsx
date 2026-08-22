@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Box, FormControl, MenuItem, OutlinedInput, Select, Tab, Tabs } from '@mui/material'
-import { Check, LogOut, X } from 'lucide-react'
+import { Check, Download, LogOut, RefreshCw, X } from 'lucide-react'
 import { toast } from 'sonner'
+import type { UpdateCheckState } from '../../hooks/useDesktopUpdateCheck'
 
 type AiField = 'deepseek' | 'openai'
 
@@ -12,6 +13,9 @@ type SettingsModalProps = {
   deepseek: string | null
   openai: string | null
   selectedAi: string | null
+  appVersion: string
+  updateCheck: UpdateCheckState
+  onCheckUpdate(options?: { force?: boolean }): Promise<unknown>
   onClose(): void
   onSave(field: AiField, value: Record<string, unknown>): Promise<void>
   onSelect(field: AiField): Promise<void>
@@ -145,6 +149,76 @@ export function SettingsModal(props: SettingsModalProps) {
     }
   }
 
+  const checkUpdate = async () => {
+    await props.onCheckUpdate({ force: true })
+  }
+
+  const openUpdateDownload = async () => {
+    const url = props.updateCheck.result?.downloadUrl
+    if (!url) return
+    try {
+      await window.robbot.app.openExternal(url)
+    } catch (cause) {
+      toast.error(`打开下载链接失败：${cause instanceof Error ? cause.message : String(cause)}`)
+    }
+  }
+
+  const updatePanel = (
+    <div className="rounded-lg border border-slate-200 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-slate-900">Desktop update</div>
+          <div className="mt-1 text-xs text-slate-500">
+            Current version {props.appVersion || '—'} · {window.robbot.app.platform}/{window.robbot.app.arch}
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={props.updateCheck.status === 'checking'}
+          className="flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          onClick={() => void checkUpdate()}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${props.updateCheck.status === 'checking' ? 'animate-spin' : ''}`} />
+          {props.updateCheck.status === 'checking' ? 'Checking...' : 'Check update'}
+        </button>
+      </div>
+
+      {props.updateCheck.status === 'latest' ? (
+        <div className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          You are using the latest version.
+        </div>
+      ) : null}
+
+      {props.updateCheck.status === 'failed' ? (
+        <div className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700">
+          {props.updateCheck.message}
+        </div>
+      ) : null}
+
+      {props.updateCheck.status === 'available' ? (
+        <div className="mt-3 rounded-md bg-amber-50 px-3 py-3 text-xs text-amber-800">
+          <div className="font-medium">
+            New version available: {props.updateCheck.result.latestVersion}
+            {props.updateCheck.result.forceUpdate ? ' · Required' : ''}
+          </div>
+          {props.updateCheck.result.releaseNotes ? (
+            <div className="mt-1 whitespace-pre-wrap text-amber-700">{props.updateCheck.result.releaseNotes}</div>
+          ) : null}
+          {props.updateCheck.result.downloadUrl ? (
+            <button
+              type="button"
+              className="mt-3 flex items-center gap-2 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
+              onClick={() => void openUpdateDownload()}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download installer
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+
   const content = (
     <div
       className={
@@ -199,6 +273,17 @@ export function SettingsModal(props: SettingsModalProps) {
         >
           <Tab label="Model" {...tabProps(0)} />
           <Tab label="Account" {...tabProps(1)} />
+          <Tab
+            label={(
+              <span className="relative inline-flex items-center">
+                Version
+                {props.updateCheck.status === 'available' ? (
+                  <span className="absolute -right-2 -top-1 h-2 w-2 rounded-full bg-rose-500" />
+                ) : null}
+              </span>
+            )}
+            {...tabProps(2)}
+          />
         </Tabs>
 
         <TabPanel value={tab} index={0}>
@@ -335,6 +420,15 @@ export function SettingsModal(props: SettingsModalProps) {
               <LogOut className="h-4 w-4" />
               Sign out
             </button>
+          </div>
+        </TabPanel>
+
+        <TabPanel value={tab} index={2}>
+          <div className="p-6">
+            <h3 className="m-0 text-base font-semibold text-slate-950">Version</h3>
+            <p className="mt-1 text-sm text-slate-500">Desktop app updates</p>
+
+            <div className="mt-6">{updatePanel}</div>
           </div>
         </TabPanel>
       </Box>

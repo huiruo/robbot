@@ -48,6 +48,14 @@ export interface SavedLogin {
   password: string;
 }
 
+export interface DesktopUpdateCheckResult {
+  hasUpdate: boolean;
+  latestVersion: string | null;
+  downloadUrl: string | null;
+  releaseNotes: string | null;
+  forceUpdate: boolean;
+}
+
 export interface DshWebViewTarget {
   url: string;
   partition: string;
@@ -202,6 +210,11 @@ export interface CreateSessionInput {
 export interface RobbotApi {
   app: {
     isPackaged: boolean;
+    platform: string;
+    arch: string;
+    getVersion: () => Promise<string>;
+    checkUpdate: (input: { platform: string; arch: string; version: string; channel?: string }) => Promise<DesktopUpdateCheckResult>;
+    openExternal: (url: string) => Promise<void>;
   };
   versions: {
     chrome: string;

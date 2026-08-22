@@ -3,6 +3,11 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('robbot', {
   app: {
     isPackaged: process.env.NODE_ENV !== 'development',
+    platform: process.platform,
+    arch: process.arch,
+    getVersion: () => ipcRenderer.invoke('app:get-version'),
+    checkUpdate: (input: unknown) => ipcRenderer.invoke('app:check-update', input),
+    openExternal: (url: string) => ipcRenderer.invoke('app:open-external', url),
   },
   versions: {
     chrome: process.versions.chrome,

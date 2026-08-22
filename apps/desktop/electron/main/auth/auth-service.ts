@@ -35,6 +35,14 @@ export interface SavedLogin {
   password: string;
 }
 
+export interface DesktopUpdateCheckResult {
+  hasUpdate: boolean;
+  latestVersion: string | null;
+  downloadUrl: string | null;
+  releaseNotes: string | null;
+  forceUpdate: boolean;
+}
+
 export class AuthError extends Error {
   readonly code: 'UNAUTHENTICATED' | 'AUTH_FAILED';
 
@@ -88,6 +96,51 @@ export class AuthSessionService {
       this.accounts.clearAuthSession(current.id);
     }
     this.current = null;
+  }
+
+  async checkDesktopUpdate(input: {
+    platform: string;
+    arch: string;
+    version: string;
+    channel?: string;
+  }): Promise<DesktopUpdateCheckResult> {
+    const current = this.current;
+    if (!current || Date.now() >= current.exp * 1000) {
+      this.current = null;
+      throw new AuthError('Not authenticated.');
+    }
+
+    const params = new URLSearchParams({
+      platform: input.platform,
+      arch: input.arch,
+      version: input.version,
+      channel: input.channel || 'stable',
+    });
+    const url = `${apiBaseUrl()}api/robbot/desktop-version/check?${params.toString()}`;
+    /*
+    console.log('[robbot:update] desktop update check request', {
+      input,
+      url,
+    });
+    */
+    const response = await net.fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: current.token,
+      },
+    });
+    const payload = (await response.json().catch(() => null)) as AuthResult<DesktopUpdateCheckResult> | null;
+    /*
+    console.log('[robbot:update] desktop update check response', {
+      status: response.status,
+      ok: response.ok,
+      payload,
+    });
+    */
+    if (!response.ok || !payload || payload.code !== 1 || !payload.data) {
+      throw new AuthError(payload?.msg || response.statusText || 'Update check failed.', 'AUTH_FAILED');
+    }
+    return payload.data;
   }
 
   getSavedLogin(): SavedLogin | null {

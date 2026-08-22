@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron';
 import path from 'node:path';
 
 import type { RuntimeServices } from '../runtime';
@@ -27,6 +27,18 @@ export function registerIpcHandlers(services: RuntimeServices): void {
   });
   services.harness.setEventSink((event) => {
     broadcast('harness:event', event);
+  });
+
+  ipcMain.handle('app:get-version', () => app.getVersion());
+  ipcMain.handle('app:check-update', (_event, input: { platform: string; arch: string; version: string; channel?: string }) =>
+    services.auth.checkDesktopUpdate(input),
+  );
+  ipcMain.handle('app:open-external', async (_event, url: string) => {
+    const target = new URL(url);
+    if (!['https:', 'http:'].includes(target.protocol)) {
+      throw new Error('Only http(s) URLs can be opened.');
+    }
+    await shell.openExternal(target.toString());
   });
 
   ipcMain.handle('auth:get-current', () => services.auth.getCurrentUser());

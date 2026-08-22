@@ -1,6 +1,6 @@
 # robbot
 
-> 基于 DeepSeek Harness 的桌面 Agent 产品层客户端。
+> 基于 DeepSeek Harness 的桌面 Agent 客户端。
 
 [![CI](https://github.com/huiruo/robbot/actions/workflows/ci.yml/badge.svg)](https://github.com/huiruo/robbot/actions/workflows/ci.yml)
 

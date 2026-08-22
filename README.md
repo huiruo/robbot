@@ -12,7 +12,7 @@ Robbot 是一个 **Electron + React + SQLite + DeepSeek Harness** 桌面应用�
 
 | 平台 | 下载 | 安装方式 |
 | --- | --- | --- |
-| Windows x64 | [下载 exe](https://github.com/huiruo/robbot/releases/download/v1.0.0/Robbot-windows-x64.zip) | 解压后运行 Robbot |
+| Windows x64 | [下载 exe](https://github.com/huiruo/robbot/releases/download/v1.0.0/Robbot-windows-x64.zip) | 解压后安装 Robbot |
 | macOS arm64 | [下载 ZIP](https://github.com/huiruo/robbot/releases/download/v1.0.0/Robbot-darwin-arm64-1.0.0.zip) | 解压后安装 Robbot
 
 

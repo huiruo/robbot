@@ -6,6 +6,7 @@ import { DshRuntimeManager } from '../runtime/dsh-runtime-manager.js';
 import type { HarnessTransport } from './transport.js';
 
 type Frame = { rpcId?: string; payload?: Record<string, unknown> };
+const WEB_READY_TIMEOUT_MS = Number(process.env.ROBBOT_DSH_WEB_READY_TIMEOUT_MS ?? 120_000);
 
 /** DSH Desktop's native HTTP-upstream/WebSocket-downstream session surface. */
 export class WebTransport implements HarnessTransport {
@@ -144,7 +145,7 @@ export class WebTransport implements HarnessTransport {
       ...runtimeEnv(metadata),
     });
     const base = this.baseUrl();
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + WEB_READY_TIMEOUT_MS;
     while (Date.now() < deadline) {
       try {
         const response = await fetch(`${base}/api/session.list`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method: 'session.list', payload: {} }) });
@@ -152,9 +153,10 @@ export class WebTransport implements HarnessTransport {
       } catch { /* wait for webserver */ }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    if (version === this.startVersion) {
-      await this.runtimeManager.stop(this.processSessionId, 'web').catch(() => undefined);
-    }
+    console.warn('[robbot:dsh-web] DSH web host did not become ready before timeout', {
+      base,
+      timeoutMs: WEB_READY_TIMEOUT_MS,
+    });
     throw new HarnessError('DSH Desktop web host did not become ready.', 'transport_error');
   }
 

@@ -29,6 +29,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     width: 1180,
     height: 780,
     icon: iconPath,
+    autoHideMenuBar: process.platform !== 'darwin',
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
@@ -36,6 +37,11 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       webviewTag: true,
     },
   });
+
+  if (process.platform !== 'darwin') {
+    win.setMenu(null);
+    win.setMenuBarVisibility(false);
+  }
 
   if (rendererDevUrl) {
     await win.loadURL(rendererDevUrl);

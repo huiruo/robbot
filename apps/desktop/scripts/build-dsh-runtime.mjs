@@ -23,7 +23,11 @@ function assertDshBuildReady() {
 
   if (missing.length > 0) {
     throw new Error(
-      `DSH runtime is not built. Missing: ${missing.join(', ')}. Run from repo root: pnpm dsh:build`,
+      [
+        `DSH runtime is not built. Missing: ${missing.join(', ')}.`,
+        'Run from repo root: pnpm dsh:setup',
+        'Then package Windows from apps/desktop: npm run make:win',
+      ].join('\n'),
     );
   }
 }

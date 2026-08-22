@@ -519,6 +519,8 @@ module.exports = {
       config: {
         name: 'robbot',
         setupExe: 'RobbotSetup.exe',
+        setupIcon: path.resolve(__dirname, 'assets/icon.ico'),
+        loadingGif: path.resolve(__dirname, 'assets/install-loading.gif'),
       },
     },
     {

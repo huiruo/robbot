@@ -153,3 +153,6 @@ docs-ignore/
 .robbot/
 
 .dsh-home
+
+pnpm
+node

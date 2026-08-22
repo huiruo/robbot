@@ -6,3 +6,6 @@ packages:
 onlyBuiltDependencies:
   - electron-winstaller
   - esbuild
+  - better-sqlite3
+  - electron-winstaller
+  - esbuild

@@ -1,10 +1,10 @@
 # robbot
 
-> 基于 DeepSeek Harness 的桌面 Agent 客户端。
+> 基于 DeepSeek Harness 的桌面 Agent 产品层客户端。
 
 [![CI](https://github.com/huiruo/robbot/actions/workflows/ci.yml/badge.svg)](https://github.com/huiruo/robbot/actions/workflows/ci.yml)
 
-Robbot 是一个 **Electron + React + SQLite + DeepSeek Harness** 桌面应用。应用侧负责账号、配置、桌面壳和发布流程；Agent 会话、工具调用、审批、上下文等能力由 DSH runtime 提供。
+Robbot 有自己的账号体系、SQLite 本地存储、AI 配置、DSH_HOME 隔离、Electron partition 隔离、Main/Renderer IPC、安全 preload、窗口生命周期和发布流程。DSH Web UI 是 Agent 能力的宿主，Robbot 负责的是产品层和桌面端工程层。
 
 ## 下载安装
 
